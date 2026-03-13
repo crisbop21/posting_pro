@@ -29,7 +29,7 @@ DEFAULT_STATE = {
     "script_history": [],         # list of previous script versions for context
 
     # Step 4 — Background generation
-    "visual_style": None,         # "cinematic" | "clean" | "vintage" | "dynamic"
+    "visual_style": None,         # "cinematic" | "clean" | "vintage" | "dynamic" | "hypnotic"
     "background_video_path": None,
 
     # Step 5 — Image sourcing
