@@ -80,7 +80,7 @@ def run(state: dict) -> dict:
         try:
             response = claude.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=4000,
+                max_tokens=2000,
                 system=skill,
                 messages=[{"role": "user", "content": input_text}],
             )
@@ -91,11 +91,25 @@ def run(state: dict) -> dict:
             state["cleaned_data"] = result.get("cleaned_data", "")
             return state
 
-        except anthropic.BadRequestError as e:
-            # Billing / credit errors should not be retried
-            if "credit" in str(e).lower() or "balance" in str(e).lower():
+        except anthropic.APIStatusError as e:
+            err_str = str(e).lower()
+            body = getattr(e, "body", None)
+            body_type = ""
+            if isinstance(body, dict):
+                body_type = body.get("error", {}).get("type", "")
+            else:
+                body_type = getattr(getattr(body, "error", None), "type", "")
+            is_billing = (
+                "credit" in err_str
+                or "balance" in err_str
+                or "billing" in err_str
+                or body_type == "billing_error"
+            )
+            if is_billing:
                 raise RuntimeError(
-                    f"Insufficient API credits: {e}"
+                    "Anthropic API billing error. Please verify your API key "
+                    "has sufficient credits at console.anthropic.com. "
+                    f"Details: {e}"
                 ) from e
             if attempt == MAX_RETRIES:
                 raise RuntimeError(
