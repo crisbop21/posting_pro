@@ -8,8 +8,10 @@ import streamlit as st
 
 from utils.state import DEFAULT_STATE, init_state
 from utils.styles import VISUAL_STYLES
+from utils.demo import load_demo
 from utils.ui_components import (
     approval_bar,
+    demo_badge,
     locked_step,
     step_card,
     word_count_display,
@@ -51,6 +53,14 @@ if "--debug-step6" in sys.argv and not st.session_state.get("_debug_loaded"):
 st.title("AI Social Video Pipeline")
 st.caption("Finance & AI short-form vertical videos — fully orchestrated.")
 
+def _apply_demo(step: int):
+    """Load demo data for a step into session state."""
+    data = load_demo(step)
+    for k, v in data.items():
+        if k in DEFAULT_STATE:
+            st.session_state[k] = v
+
+
 # ===================================================================
 # STEP 1 — Gather Data
 # ===================================================================
@@ -73,23 +83,29 @@ if mode == "custom_topic":
         key="input_custom_topic",
     )
 
-if st.button("Gather Data", key="btn_gather", type="primary"):
-    try:
-        with st.spinner("Gathering data..."):
-            from pipeline.gather import run as gather_run
+_col_run1, _col_demo1 = st.columns([1, 1])
+with _col_run1:
+    if st.button("Gather Data", key="btn_gather", type="primary"):
+        try:
+            with st.spinner("Gathering data..."):
+                from pipeline.gather import run as gather_run
 
-            state = {k: st.session_state[k] for k in st.session_state}
-            state = gather_run(state)
-            for k, v in state.items():
-                if k in DEFAULT_STATE:
-                    st.session_state[k] = v
+                state = {k: st.session_state[k] for k in st.session_state}
+                state = gather_run(state)
+                for k, v in state.items():
+                    if k in DEFAULT_STATE:
+                        st.session_state[k] = v
+            st.rerun()
+        except Exception as e:
+            msg = str(e).rstrip(". ")
+            st.error(
+                f"Could not gather data: {msg}. "
+                "Click **Gather Data** to try again."
+            )
+with _col_demo1:
+    if st.button("Use Demo Output", key="btn_demo_1"):
+        _apply_demo(1)
         st.rerun()
-    except Exception as e:
-        msg = str(e).rstrip(". ")
-        st.error(
-            f"Could not gather data: {msg}. "
-            "Click **Gather Data** to try again."
-        )
 
 # Show gathered data preview
 if st.session_state.get("raw_data") is not None:
@@ -103,6 +119,9 @@ if st.session_state.get("raw_data") is not None:
                 st.divider()
         else:
             st.write(raw)
+
+    if st.session_state.get("step1_demo"):
+        demo_badge(1)
 
     if not st.session_state["step1_approved"]:
         if approval_bar("step1_approved", "Approve data & continue"):
@@ -120,23 +139,29 @@ else:
 
     # Run fact-check if not yet done
     if st.session_state.get("cleaned_data") is None:
-        if st.button("Run Fact-Check", key="btn_factcheck", type="primary"):
-            try:
-                with st.spinner("Fact-checking with Claude..."):
-                    from pipeline.factcheck import run as factcheck_run
+        _col_run2, _col_demo2 = st.columns([1, 1])
+        with _col_run2:
+            if st.button("Run Fact-Check", key="btn_factcheck", type="primary"):
+                try:
+                    with st.spinner("Fact-checking with Claude..."):
+                        from pipeline.factcheck import run as factcheck_run
 
-                    state = {k: st.session_state[k] for k in st.session_state}
-                    state = factcheck_run(state)
-                    for k, v in state.items():
-                        if k in DEFAULT_STATE:
-                            st.session_state[k] = v
+                        state = {k: st.session_state[k] for k in st.session_state}
+                        state = factcheck_run(state)
+                        for k, v in state.items():
+                            if k in DEFAULT_STATE:
+                                st.session_state[k] = v
+                    st.rerun()
+                except Exception as e:
+                    msg = str(e).rstrip(". ")
+                    st.error(
+                        f"Could not complete fact-checking: {msg}. "
+                        "Click **Run Fact-Check** to try again."
+                    )
+        with _col_demo2:
+            if st.button("Use Demo Output", key="btn_demo_2"):
+                _apply_demo(2)
                 st.rerun()
-            except Exception as e:
-                msg = str(e).rstrip(". ")
-                st.error(
-                    f"Could not complete fact-checking: {msg}. "
-                    "Click **Run Fact-Check** to try again."
-                )
     else:
         # Display fact-check flags
         flags = st.session_state.get("factcheck_flags", [])
@@ -161,6 +186,9 @@ else:
         )
         st.session_state["cleaned_data"] = edited
 
+        if st.session_state.get("step2_demo"):
+            demo_badge(2)
+
         if not st.session_state["step2_approved"]:
             if approval_bar("step2_approved", "Approve & continue"):
                 st.rerun()
@@ -176,23 +204,29 @@ else:
     step_card(3, "Write Script", "Generate a voiceover script from the cleaned data.")
 
     if st.session_state.get("script") is None:
-        if st.button("Generate Script", key="btn_script", type="primary"):
-            try:
-                with st.spinner("Writing script with Claude..."):
-                    from pipeline.script import run as script_run
+        _col_run3, _col_demo3 = st.columns([1, 1])
+        with _col_run3:
+            if st.button("Generate Script", key="btn_script", type="primary"):
+                try:
+                    with st.spinner("Writing script with Claude..."):
+                        from pipeline.script import run as script_run
 
-                    state = {k: st.session_state[k] for k in st.session_state}
-                    state = script_run(state)
-                    for k, v in state.items():
-                        if k in DEFAULT_STATE:
-                            st.session_state[k] = v
+                        state = {k: st.session_state[k] for k in st.session_state}
+                        state = script_run(state)
+                        for k, v in state.items():
+                            if k in DEFAULT_STATE:
+                                st.session_state[k] = v
+                    st.rerun()
+                except Exception as e:
+                    msg = str(e).rstrip(". ")
+                    st.error(
+                        f"Could not generate the script: {msg}. "
+                        "Click **Generate Script** to try again."
+                    )
+        with _col_demo3:
+            if st.button("Use Demo Output", key="btn_demo_3"):
+                _apply_demo(3)
                 st.rerun()
-            except Exception as e:
-                msg = str(e).rstrip(". ")
-                st.error(
-                    f"Could not generate the script: {msg}. "
-                    "Click **Generate Script** to try again."
-                )
     else:
         # Word count display
         word_count_display(st.session_state["word_count"])
@@ -215,6 +249,9 @@ else:
             st.session_state["estimated_duration_s"] = round(
                 (st.session_state["word_count"] / 150) * 60
             )
+
+        if st.session_state.get("step3_demo"):
+            demo_badge(3)
 
         if not st.session_state["step3_approved"]:
             if approval_bar("step3_approved", "Approve script & continue"):
@@ -247,28 +284,37 @@ else:
     )
     st.session_state["visual_style"] = selected_style
 
-    if st.button("Generate Background", key="btn_background", type="primary"):
-        try:
-            with st.spinner("Generating background image and rendering Ken Burns video..."):
-                from pipeline.background import run as background_run
+    _col_run4, _col_demo4 = st.columns([1, 1])
+    with _col_run4:
+        if st.button("Generate Background", key="btn_background", type="primary"):
+            try:
+                with st.spinner("Generating background image and rendering Ken Burns video..."):
+                    from pipeline.background import run as background_run
 
-                state = {k: st.session_state[k] for k in st.session_state}
-                state = background_run(state)
-                for k, v in state.items():
-                    if k in DEFAULT_STATE:
-                        st.session_state[k] = v
+                    state = {k: st.session_state[k] for k in st.session_state}
+                    state = background_run(state)
+                    for k, v in state.items():
+                        if k in DEFAULT_STATE:
+                            st.session_state[k] = v
+                st.rerun()
+            except Exception as e:
+                msg = str(e).rstrip(". ")
+                st.error(
+                    f"Could not generate the background: {msg}. "
+                    "Click **Generate Background** to try again."
+                )
+    with _col_demo4:
+        if st.button("Use Demo Output", key="btn_demo_4"):
+            _apply_demo(4)
             st.rerun()
-        except Exception as e:
-            msg = str(e).rstrip(". ")
-            st.error(
-                f"Could not generate the background: {msg}. "
-                "Click **Generate Background** to try again."
-            )
 
     # Preview
     bg_path = st.session_state.get("background_video_path")
     if bg_path and Path(bg_path).exists():
         st.video(bg_path)
+
+        if st.session_state.get("step4_demo"):
+            demo_badge(4)
 
         if not st.session_state["step4_approved"]:
             if approval_bar("step4_approved", "Approve background & continue"):
@@ -285,23 +331,29 @@ else:
     step_card(5, "Source Images", "Find overlay images for each script segment.")
 
     if not st.session_state.get("overlay_sequence"):
-        if st.button("Source Images", key="btn_images", type="primary"):
-            try:
-                with st.spinner("Searching for images..."):
-                    from pipeline.images import run as images_run
+        _col_run5, _col_demo5 = st.columns([1, 1])
+        with _col_run5:
+            if st.button("Source Images", key="btn_images", type="primary"):
+                try:
+                    with st.spinner("Searching for images..."):
+                        from pipeline.images import run as images_run
 
-                    state = {k: st.session_state[k] for k in st.session_state}
-                    state = images_run(state)
-                    for k, v in state.items():
-                        if k in DEFAULT_STATE:
-                            st.session_state[k] = v
+                        state = {k: st.session_state[k] for k in st.session_state}
+                        state = images_run(state)
+                        for k, v in state.items():
+                            if k in DEFAULT_STATE:
+                                st.session_state[k] = v
+                    st.rerun()
+                except Exception as e:
+                    msg = str(e).rstrip(". ")
+                    st.error(
+                        f"Could not source images: {msg}. "
+                        "Click **Source Images** to try again."
+                    )
+        with _col_demo5:
+            if st.button("Use Demo Output", key="btn_demo_5"):
+                _apply_demo(5)
                 st.rerun()
-            except Exception as e:
-                msg = str(e).rstrip(". ")
-                st.error(
-                    f"Could not source images: {msg}. "
-                    "Click **Source Images** to try again."
-                )
     else:
         overlays = st.session_state["overlay_sequence"]
         st.write(f"{len(overlays)} overlay image(s) sourced.")
@@ -328,6 +380,9 @@ else:
                                     st.rerun()
                                 else:
                                     st.error("Could not generate a replacement image.")
+
+        if st.session_state.get("step5_demo"):
+            demo_badge(5)
 
         if not st.session_state["step5_approved"]:
             if approval_bar("step5_approved", "Approve images & continue"):
@@ -383,29 +438,35 @@ else:
                 time.sleep(2)
                 st.rerun()
         else:
-            if st.button("Assemble Video", key="btn_assemble", type="primary"):
-                st.session_state["assembly_running"] = True
-                st.session_state["assembly_done"] = False
-                st.session_state["assembly_error"] = None
-                st.session_state["assembly_started_at"] = time.time()
+            _col_run6, _col_demo6 = st.columns([1, 1])
+            with _col_run6:
+                if st.button("Assemble Video", key="btn_assemble", type="primary"):
+                    st.session_state["assembly_running"] = True
+                    st.session_state["assembly_done"] = False
+                    st.session_state["assembly_error"] = None
+                    st.session_state["assembly_started_at"] = time.time()
 
-                def _assemble_in_background():
-                    try:
-                        from pipeline.assemble import run as assemble_run
+                    def _assemble_in_background():
+                        try:
+                            from pipeline.assemble import run as assemble_run
 
-                        state = {k: st.session_state[k] for k in st.session_state}
-                        state = assemble_run(state)
-                        for k, v in state.items():
-                            if k in DEFAULT_STATE:
-                                st.session_state[k] = v
-                    except Exception as e:
-                        st.session_state["assembly_error"] = str(e)
-                    finally:
-                        st.session_state["assembly_done"] = True
+                            state = {k: st.session_state[k] for k in st.session_state}
+                            state = assemble_run(state)
+                            for k, v in state.items():
+                                if k in DEFAULT_STATE:
+                                    st.session_state[k] = v
+                        except Exception as e:
+                            st.session_state["assembly_error"] = str(e)
+                        finally:
+                            st.session_state["assembly_done"] = True
 
-                thread = threading.Thread(target=_assemble_in_background, daemon=True)
-                thread.start()
-                st.rerun()
+                    thread = threading.Thread(target=_assemble_in_background, daemon=True)
+                    thread.start()
+                    st.rerun()
+            with _col_demo6:
+                if st.button("Use Demo Output", key="btn_demo_6"):
+                    _apply_demo(6)
+                    st.rerun()
     else:
         # Show the assembled video
         video_path = st.session_state["final_video_path"]
@@ -413,6 +474,9 @@ else:
             st.video(video_path)
         else:
             st.warning("Video file not found. You may need to reassemble.")
+
+        if st.session_state.get("step6_demo"):
+            demo_badge(6)
 
         if not st.session_state["step6_approved"]:
             if approval_bar("step6_approved", "Approve video & continue"):

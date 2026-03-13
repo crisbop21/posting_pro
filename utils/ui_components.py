@@ -52,6 +52,14 @@ def image_card(image_path: str, caption: str = "", selected: bool = False):
     )
 
 
+def demo_badge(step_number: int):
+    """Show a small badge indicating this step used demo data."""
+    st.markdown(
+        f'<div class="demo-badge">DEMO DATA</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def word_count_display(count: int, min_words: int = 150, max_words: int = 320):
     """Show a word count indicator that turns green/red based on range."""
     if min_words <= count <= max_words:
