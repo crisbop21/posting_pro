@@ -1,7 +1,7 @@
 /* Step card styling */
 .step-card {
-    background-color: #1e1e2e;
-    border: 1px solid #313244;
+    background-color: #ffffff;
+    border: 1px solid #bfdbfe;
     border-radius: 12px;
     padding: 1.5rem;
     margin-bottom: 1rem;
@@ -9,7 +9,7 @@
 
 .step-card h3 {
     margin-top: 0;
-    color: #cdd6f4;
+    color: #1e40af;
 }
 
 /* Locked step overlay */
@@ -26,7 +26,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    color: #a6adc8;
+    color: #64748b;
     font-size: 0.9rem;
     font-weight: 600;
     white-space: nowrap;
@@ -38,7 +38,7 @@
     gap: 0.75rem;
     align-items: center;
     padding: 0.75rem 0;
-    border-top: 1px solid #313244;
+    border-top: 1px solid #bfdbfe;
     margin-top: 1rem;
 }
 
@@ -59,11 +59,11 @@
 }
 
 .image-card:hover {
-    border-color: #89b4fa;
+    border-color: #2563eb;
 }
 
 .image-card.selected {
-    border-color: #a6e3a1;
+    border-color: #16a34a;
 }
 
 .image-card img {
@@ -75,24 +75,24 @@
 /* Word count indicator */
 .word-count {
     font-size: 0.85rem;
-    color: #a6adc8;
+    color: #64748b;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     display: inline-block;
 }
 
 .word-count.in-range {
-    color: #a6e3a1;
+    color: #16a34a;
 }
 
 .word-count.out-of-range {
-    color: #f38ba8;
+    color: #dc2626;
 }
 
 /* Progress indicator */
 .progress-bar {
     height: 4px;
-    background-color: #313244;
+    background-color: #dbeafe;
     border-radius: 2px;
     overflow: hidden;
     margin: 0.5rem 0;
@@ -100,7 +100,7 @@
 
 .progress-bar-fill {
     height: 100%;
-    background-color: #89b4fa;
+    background-color: #2563eb;
     transition: width 0.3s ease;
 }
 
@@ -110,7 +110,7 @@
     margin: 1rem auto;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
 }
 
 /* Fact-check flag styling */
@@ -122,16 +122,16 @@
 }
 
 .factcheck-flag.high {
-    background-color: rgba(166, 227, 161, 0.15);
-    border-left: 3px solid #a6e3a1;
+    background-color: rgba(22, 163, 74, 0.1);
+    border-left: 3px solid #16a34a;
 }
 
 .factcheck-flag.medium {
-    background-color: rgba(249, 226, 175, 0.15);
-    border-left: 3px solid #f9e2af;
+    background-color: rgba(234, 179, 8, 0.1);
+    border-left: 3px solid #eab308;
 }
 
 .factcheck-flag.low {
-    background-color: rgba(243, 139, 168, 0.15);
-    border-left: 3px solid #f38ba8;
+    background-color: rgba(220, 38, 38, 0.1);
+    border-left: 3px solid #dc2626;
 }
