@@ -1,0 +1,25 @@
+{
+  "flags": [
+    {
+      "claim": "The Federal Reserve maintained its benchmark interest rate at 5.25-5.50%",
+      "confidence": "high",
+      "note": "Consistent with recent Fed policy statements and widely reported."
+    },
+    {
+      "claim": "NVIDIA posted $22.1 billion in quarterly revenue, a 265% year-over-year increase",
+      "confidence": "high",
+      "note": "Matches NVIDIA's publicly reported Q4 earnings figures."
+    },
+    {
+      "claim": "Bitcoin reached a new all-time high above $70,000",
+      "confidence": "medium",
+      "note": "Bitcoin has been volatile; the exact timing and figure should be verified against exchange data."
+    },
+    {
+      "claim": "Spot ETF inflows and growing institutional participation as key drivers",
+      "confidence": "medium",
+      "note": "Plausible given recent spot Bitcoin ETF approvals, but attribution to price moves is speculative."
+    }
+  ],
+  "cleaned_data": "The Federal Reserve maintained its benchmark interest rate at 5.25-5.50% during its latest meeting, citing persistent inflation above the 2% target. NVIDIA posted $22.1 billion in quarterly revenue, a 265% year-over-year increase, driven by surging demand for its H100 and B200 AI accelerators. Reports suggest Bitcoin surpassed $70,000, with analysts pointing to spot ETF inflows and growing institutional participation as likely drivers of the rally."
+}

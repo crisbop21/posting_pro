@@ -3,6 +3,7 @@
 import time
 from pathlib import Path
 
+import requests
 import streamlit as st
 
 from utils.api_clients import openai_client
@@ -47,7 +48,6 @@ def run(state: dict) -> dict:
             image_url = response.data[0].url
 
             # Download the image locally
-            import requests
             img_resp = requests.get(image_url, timeout=60)
             img_resp.raise_for_status()
 

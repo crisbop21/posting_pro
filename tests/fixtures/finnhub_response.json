@@ -1,0 +1,46 @@
+[
+  {
+    "category": "general",
+    "datetime": 1710244200,
+    "headline": "S&P 500 Closes at Record High on Tech Rally",
+    "id": 1001,
+    "image": "https://example.com/sp500.jpg",
+    "related": "SPY",
+    "source": "MarketWatch",
+    "summary": "The S&P 500 index closed at a new all-time high of 5,175 points, led by gains in technology and semiconductor stocks.",
+    "url": "https://example.com/sp500-record"
+  },
+  {
+    "category": "general",
+    "datetime": 1710240600,
+    "headline": "European Central Bank Signals Rate Cut in June",
+    "id": 1002,
+    "image": "https://example.com/ecb.jpg",
+    "related": "",
+    "source": "Financial Times",
+    "summary": "ECB President Christine Lagarde indicated that a rate reduction is likely at the June meeting if inflation continues to ease toward the 2% target.",
+    "url": "https://example.com/ecb-rate"
+  },
+  {
+    "category": "general",
+    "datetime": 1710237000,
+    "headline": "Oil Prices Rise on OPEC+ Production Cut Extension",
+    "id": 1003,
+    "image": "https://example.com/oil.jpg",
+    "related": "USO",
+    "source": "Reuters",
+    "summary": "Brent crude oil rose 2.3% to $83.50 per barrel after OPEC+ members agreed to extend voluntary production cuts through the end of Q2 2026.",
+    "url": "https://example.com/oil-opec"
+  },
+  {
+    "category": "general",
+    "datetime": 1710233400,
+    "headline": "Apple Announces AI-Powered Features for iOS 19",
+    "id": 1004,
+    "image": "https://example.com/apple.jpg",
+    "related": "AAPL",
+    "source": "The Verge",
+    "summary": "Apple unveiled a suite of on-device AI features coming to iOS 19, including an enhanced Siri assistant and real-time language translation powered by custom silicon.",
+    "url": "https://example.com/apple-ai"
+  }
+]
