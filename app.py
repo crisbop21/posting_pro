@@ -363,7 +363,7 @@ else:
         for i, img_path in enumerate(overlays):
             with cols[i % len(cols)]:
                 if Path(img_path).exists():
-                    st.image(img_path, caption=f"Overlay {i + 1}", use_container_width=True)
+                    st.image(img_path, caption=f"Overlay {i + 1}", width="stretch")
 
                     # Per-slot DALL-E swap button
                     if st.button(f"Swap #{i + 1} with DALL-E", key=f"swap_dalle_{i}"):
@@ -425,10 +425,15 @@ else:
                 else:
                     st.rerun()
             elif started and (time.time() - started) > ASSEMBLY_TIMEOUT_S:
-                # Timed out — stop polling and surface the error
+                # Timed out — stop polling and surface the error.
+                # Bump generation ID so the stale background thread
+                # will not overwrite state when it eventually finishes.
                 st.session_state["assembly_running"] = False
-                st.session_state["assembly_done"] = True
+                st.session_state["assembly_done"] = False
                 st.session_state["assembly_error"] = None
+                st.session_state["assembly_gen_id"] = (
+                    st.session_state.get("assembly_gen_id", 0) + 1
+                )
                 st.error(
                     "Video assembly timed out after 5 minutes. "
                     "This may indicate a problem with the inputs. "
@@ -441,24 +446,32 @@ else:
             _col_run6, _col_demo6 = st.columns([1, 1])
             with _col_run6:
                 if st.button("Assemble Video", key="btn_assemble", type="primary"):
+                    gen_id = st.session_state.get("assembly_gen_id", 0) + 1
+                    st.session_state["assembly_gen_id"] = gen_id
                     st.session_state["assembly_running"] = True
                     st.session_state["assembly_done"] = False
                     st.session_state["assembly_error"] = None
                     st.session_state["assembly_started_at"] = time.time()
 
-                    def _assemble_in_background():
+                    def _assemble_in_background(_gen_id=gen_id):
                         try:
                             from pipeline.assemble import run as assemble_run
 
                             state = {k: st.session_state[k] for k in st.session_state}
                             state = assemble_run(state)
+                            # Only apply results if this is still the active run
+                            if st.session_state.get("assembly_gen_id") != _gen_id:
+                                return
                             for k, v in state.items():
                                 if k in DEFAULT_STATE:
                                     st.session_state[k] = v
                         except Exception as e:
+                            if st.session_state.get("assembly_gen_id") != _gen_id:
+                                return
                             st.session_state["assembly_error"] = str(e)
                         finally:
-                            st.session_state["assembly_done"] = True
+                            if st.session_state.get("assembly_gen_id") == _gen_id:
+                                st.session_state["assembly_done"] = True
 
                     thread = threading.Thread(target=_assemble_in_background, daemon=True)
                     thread.start()

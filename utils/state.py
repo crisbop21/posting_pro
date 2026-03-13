@@ -40,6 +40,7 @@ DEFAULT_STATE = {
     "assembly_done": False,
     "assembly_error": None,
     "assembly_started_at": None,
+    "assembly_gen_id": 0,          # generation ID to discard stale threads
 
     # Demo output flags (True when step was filled with demo data)
     "step1_demo": False,
