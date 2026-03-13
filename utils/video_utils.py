@@ -1,5 +1,6 @@
 """Ken Burns renderer, color grading, cropping, and FFmpeg video compositor."""
 
+import json
 import random
 import subprocess
 import tempfile
