@@ -40,6 +40,14 @@ DEFAULT_STATE = {
     "assembly_done": False,
     "assembly_error": None,
     "assembly_started_at": None,
+
+    # Demo output flags (True when step was filled with demo data)
+    "step1_demo": False,
+    "step2_demo": False,
+    "step3_demo": False,
+    "step4_demo": False,
+    "step5_demo": False,
+    "step6_demo": False,
 }
 
 
