@@ -6,7 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from utils.state import init_state
+from utils.state import DEFAULT_STATE, init_state
 from utils.styles import VISUAL_STYLES
 from utils.ui_components import (
     approval_bar,
@@ -67,7 +67,8 @@ if st.button("Gather Data", key="btn_gather", type="primary"):
         state = {k: st.session_state[k] for k in st.session_state}
         state = gather_run(state)
         for k, v in state.items():
-            st.session_state[k] = v
+            if k in DEFAULT_STATE:
+                st.session_state[k] = v
     st.rerun()
 
 # Show gathered data preview
@@ -106,7 +107,8 @@ else:
                 state = {k: st.session_state[k] for k in st.session_state}
                 state = factcheck_run(state)
                 for k, v in state.items():
-                    st.session_state[k] = v
+                    if k in DEFAULT_STATE:
+                        st.session_state[k] = v
             st.rerun()
     else:
         # Display fact-check flags
@@ -154,7 +156,8 @@ else:
                 state = {k: st.session_state[k] for k in st.session_state}
                 state = script_run(state)
                 for k, v in state.items():
-                    st.session_state[k] = v
+                    if k in DEFAULT_STATE:
+                        st.session_state[k] = v
             st.rerun()
     else:
         # Word count display
@@ -217,7 +220,8 @@ else:
             state = {k: st.session_state[k] for k in st.session_state}
             state = background_run(state)
             for k, v in state.items():
-                st.session_state[k] = v
+                if k in DEFAULT_STATE:
+                    st.session_state[k] = v
         st.rerun()
 
     # Preview
@@ -247,7 +251,8 @@ else:
                 state = {k: st.session_state[k] for k in st.session_state}
                 state = images_run(state)
                 for k, v in state.items():
-                    st.session_state[k] = v
+                    if k in DEFAULT_STATE:
+                        st.session_state[k] = v
             st.rerun()
     else:
         overlays = st.session_state["overlay_sequence"]
@@ -323,7 +328,7 @@ else:
                         state = {k: st.session_state[k] for k in st.session_state}
                         state = assemble_run(state)
                         for k, v in state.items():
-                            if k in st.session_state:
+                            if k in DEFAULT_STATE:
                                 st.session_state[k] = v
                     except Exception as e:
                         st.session_state["assembly_error"] = str(e)
