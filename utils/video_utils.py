@@ -18,6 +18,7 @@ MAX_OVERLAY_S = 18
 # FFmpeg encoding settings
 CRF = "23"
 CODEC = "libx264"
+FFMPEG = "/usr/bin/ffmpeg"
 
 
 def render_ken_burns(image_path: str, duration_s: float, output_path: str,
@@ -52,7 +53,7 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
     )
 
     cmd = [
-        "ffmpeg", "-y",
+        FFMPEG, "-y",
         "-i", image_path,
         "-vf", zp_filter,
         "-c:v", CODEC,
@@ -122,7 +123,7 @@ def composite_video(background_path: str, audio_path: str,
     filter_complex = ";".join(filter_parts)
 
     cmd = [
-        "ffmpeg", "-y",
+        FFMPEG, "-y",
         *inputs,
         "-filter_complex", filter_complex,
         "-map", f"[{prev_label}]",

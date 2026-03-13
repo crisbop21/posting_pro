@@ -33,7 +33,7 @@ def run(state: dict) -> dict:
         st.stop()
 
     # Pre-flight: check that ffmpeg is available
-    if not shutil.which("ffmpeg"):
+    if not shutil.which("ffmpeg") and not Path("/usr/bin/ffmpeg").exists():
         st.error(
             "FFmpeg is not installed on this system. "
             "Please install it (e.g. `apt-get install ffmpeg`) and try again."
