@@ -7,7 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from utils.state import DEFAULT_STATE, init_state
-from utils.styles import VISUAL_STYLES
+from utils.styles import BACKGROUND_MODES, VISUAL_STYLES
 from utils.demo import load_demo
 from utils.ui_components import (
     approval_bar,
@@ -326,8 +326,9 @@ else:
 if not st.session_state["step3_approved"]:
     locked_step(4, "Generate Background")
 else:
-    step_card(4, "Generate Background", "Choose a visual style and generate a Ken Burns background.")
+    step_card(4, "Generate Background", "Choose a visual style, get a mode recommendation, and generate your background.")
 
+    # --- Visual style selector ---
     style_options = list(VISUAL_STYLES.keys())
     style_labels = {k: f"{v['label']} — {v['description']}" for k, v in VISUAL_STYLES.items()}
 
@@ -345,11 +346,67 @@ else:
     )
     st.session_state["visual_style"] = selected_style
 
+    # --- Analyze Script for mode recommendation ---
+    st.divider()
+    rec = st.session_state.get("background_recommendation")
+
+    if rec is None:
+        if st.button("Analyze Script", key="btn_analyze_bg", type="secondary"):
+            try:
+                with st.spinner("Claude is analyzing your script for the best background mode..."):
+                    from pipeline.background import _recommend_mode
+
+                    state = {k: st.session_state[k] for k in st.session_state}
+                    recommendation = _recommend_mode(state)
+                    st.session_state["background_recommendation"] = recommendation
+                    st.session_state["background_mode"] = recommendation["recommended_mode"]
+                st.rerun()
+            except Exception as e:
+                msg = str(e).rstrip(". ")
+                st.error(f"Could not analyze script: {msg}. Try again.")
+    else:
+        # Show recommendation
+        st.info(
+            f"**Recommended mode: {BACKGROUND_MODES.get(rec['recommended_mode'], {}).get('label', rec['recommended_mode'])}** "
+            f"— {rec.get('reasoning', '')}"
+        )
+
+        # Show Pexels queries for stock modes
+        if rec.get("pexels_queries"):
+            st.caption(f"Search queries: {', '.join(rec['pexels_queries'])}")
+
+    # --- Background mode selector ---
+    mode_options = list(BACKGROUND_MODES.keys())
+    mode_labels = {k: f"{v['label']} — {v['description']}" for k, v in BACKGROUND_MODES.items()}
+
+    current_mode_idx = 0
+    if st.session_state.get("background_mode") in mode_options:
+        current_mode_idx = mode_options.index(st.session_state["background_mode"])
+
+    selected_mode = st.radio(
+        "Background mode",
+        options=mode_options,
+        format_func=lambda m: mode_labels[m],
+        index=current_mode_idx,
+        key="radio_background_mode",
+        horizontal=True,
+    )
+    st.session_state["background_mode"] = selected_mode
+
+    # Note if user overrides the recommendation
+    if rec and selected_mode != rec.get("recommended_mode"):
+        st.caption(
+            f"You selected **{BACKGROUND_MODES[selected_mode]['label']}** "
+            f"(Claude recommended {BACKGROUND_MODES[rec['recommended_mode']]['label']})"
+        )
+
+    # --- Generate button ---
     _col_run4, _col_demo4 = st.columns([1, 1])
     with _col_run4:
         if st.button("Generate Background", key="btn_background", type="primary"):
             try:
-                with st.spinner("Generating background image and rendering Ken Burns video..."):
+                mode_label = BACKGROUND_MODES.get(selected_mode, {}).get("label", selected_mode)
+                with st.spinner(f"Generating {mode_label} background..."):
                     from pipeline.background import run as background_run
 
                     state = {k: st.session_state[k] for k in st.session_state}

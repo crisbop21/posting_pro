@@ -1,4 +1,4 @@
-"""Visual style definitions for Ken Burns background generation.
+"""Visual style definitions for background generation.
 
 Each style maps to a DALL-E prompt template (used as fallback) and a style
 brief that the background_skill uses to craft a topic-aware prompt via Claude.
@@ -22,6 +22,14 @@ VISUAL_STYLES = {
             "no numbers, no watermarks. No people, no faces, no hands. No logos, "
             "no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
+        "color_grade": {
+            "brightness": 0.0,
+            "contrast": 1.3,
+            "saturation": 0.85,
+            "warmth": -0.1,
+            "vignette": True,
+        },
+        "green_screen_colors": ("#0a0a1a", "#1a1a3a"),
     },
     "clean": {
         "label": "Clean",
@@ -39,6 +47,14 @@ VISUAL_STYLES = {
             "no letters, no numbers, no watermarks. No people, no faces, no hands. "
             "No logos, no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
+        "color_grade": {
+            "brightness": 0.1,
+            "contrast": 1.0,
+            "saturation": 0.9,
+            "warmth": 0.05,
+            "vignette": False,
+        },
+        "green_screen_colors": ("#f0f4f8", "#dce6f0"),
     },
     "vintage": {
         "label": "Vintage",
@@ -56,6 +72,14 @@ VISUAL_STYLES = {
             "no numbers, no watermarks. No people, no faces, no hands. No logos, "
             "no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
+        "color_grade": {
+            "brightness": 0.0,
+            "contrast": 1.1,
+            "saturation": 0.7,
+            "warmth": 0.3,
+            "vignette": True,
+        },
+        "green_screen_colors": ("#2a2018", "#3d2e1e"),
     },
     "dynamic": {
         "label": "Dynamic",
@@ -92,5 +116,32 @@ VISUAL_STYLES = {
             "no letters, no numbers, no watermarks. No people, no faces, no hands. "
             "No logos, no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
+        "color_grade": {
+            "brightness": 0.0,
+            "contrast": 1.4,
+            "saturation": 1.3,
+            "warmth": -0.15,
+            "vignette": False,
+        },
+        "green_screen_colors": ("#0a001a", "#1a0033"),
+    },
+}
+
+BACKGROUND_MODES = {
+    "ai_generated": {
+        "label": "AI Generated",
+        "description": "DALL-E abstract image with Ken Burns animation",
+    },
+    "stock_broll": {
+        "label": "Stock B-Roll",
+        "description": "Real Pexels footage, cropped vertical, color graded",
+    },
+    "green_screen": {
+        "label": "Green Screen",
+        "description": "Solid/gradient background for overlay-focused content",
+    },
+    "hybrid": {
+        "label": "Hybrid",
+        "description": "Stock footage base with AI-generated accent layer",
     },
 }
