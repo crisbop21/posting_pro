@@ -118,11 +118,17 @@ def run(state: dict) -> dict:
         )
     duration = state.get("estimated_duration_s", 60)
 
+    print(f"[ASSEMBLE] Inputs OK — background={background}, "
+          f"script_len={len(script)}, overlays={len(overlays)}, duration={duration}s")
+
     # Generate voiceover
+    print("[ASSEMBLE] Generating voiceover...")
     audio_path = _generate_voiceover(script)
+    print(f"[ASSEMBLE] Voiceover saved to {audio_path}")
 
     # Compute overlay timing
     timings = _compute_overlay_timing(len(overlays), duration)
+    print(f"[ASSEMBLE] Overlay timings computed: {len(timings)} entries")
 
     # Build overlay sequence with timing and paths
     overlay_sequence = []
@@ -142,6 +148,7 @@ def run(state: dict) -> dict:
     output_path = f"outputs/{slug}-{date_str}.mp4"
 
     # Composite the final video
+    print(f"[ASSEMBLE] Compositing video to {output_path}...")
     for attempt in range(MAX_RETRIES + 1):
         try:
             composite_video(
@@ -150,10 +157,12 @@ def run(state: dict) -> dict:
                 overlay_sequence=overlay_sequence,
                 output_path=output_path,
             )
+            print(f"[ASSEMBLE] Video composited successfully: {output_path}")
             state["final_video_path"] = output_path
             return state
 
         except Exception as e:
+            print(f"[ASSEMBLE] composite_video attempt {attempt + 1} failed: {e}")
             if attempt == MAX_RETRIES:
                 raise RuntimeError(f"Could not assemble the video: {e}") from e
             time.sleep(2 ** attempt)
