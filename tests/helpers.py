@@ -82,6 +82,10 @@ def mock_state(up_to_step: int = 0) -> dict:
         "background_video_path": None,
         "overlay_sequence": [],
         "final_video_path": None,
+        "assembly_running": False,
+        "assembly_done": False,
+        "assembly_error": None,
+        "assembly_started_at": None,
     }
 
     for step in range(1, up_to_step + 1):

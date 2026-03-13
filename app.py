@@ -33,6 +33,19 @@ st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 init_state()
 
 # ---------------------------------------------------------------------------
+# Debug: pre-load state to jump to a specific step
+# Usage:  streamlit run app.py -- --debug-step6
+# ---------------------------------------------------------------------------
+import sys
+
+if "--debug-step6" in sys.argv and not st.session_state.get("_debug_loaded"):
+    from tests.helpers import mock_state
+    _debug = mock_state(up_to_step=5)
+    for k, v in _debug.items():
+        st.session_state[k] = v
+    st.session_state["_debug_loaded"] = True
+
+# ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
 st.title("AI Social Video Pipeline")
