@@ -1,5 +1,6 @@
 """Step 3: Script generation via Claude."""
 
+import re
 import time
 from pathlib import Path
 
@@ -62,6 +63,27 @@ def run(state: dict) -> dict:
                 messages=[{"role": "user", "content": user_message}],
             )
             script = response.content[0].text.strip()
+
+            # Ensure at least one [IMAGE: ...] marker exists — the
+            # overlay pipeline depends on these to source visuals.
+            if not re.search(r"\[IMAGE:\s*.+?\]", script):
+                repair = claude.messages.create(
+                    model="claude-sonnet-4-5",
+                    max_tokens=2000,
+                    system=skill,
+                    messages=[
+                        {"role": "user", "content": user_message},
+                        {"role": "assistant", "content": script},
+                        {"role": "user", "content": (
+                            "This script is missing [IMAGE: description] markers. "
+                            "Rewrite it with 3–6 image markers placed throughout "
+                            "the script as required by the rules. Return ONLY the "
+                            "revised script."
+                        )},
+                    ],
+                )
+                script = repair.content[0].text.strip()
+
             word_count = len(script.split())
             duration_s = round((word_count / WORDS_PER_MINUTE) * 60)
 

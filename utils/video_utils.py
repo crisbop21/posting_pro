@@ -108,18 +108,22 @@ def composite_video(background_path: str, audio_path: str,
     prev_label = "0:v"
 
     for i, overlay in enumerate(overlay_sequence):
-        inputs.extend(["-i", overlay["image_path"]])
-        input_idx = i + 2  # 0=bg, 1=audio, 2+=overlays
-
         start = overlay["start_s"]
         duration = overlay["duration_s"]
         end = start + duration
+
+        # Loop the still image so FFmpeg generates frames with proper
+        # timestamps — without this the image is a single frame at t=0
+        # and the fade filter never triggers for later overlays.
+        inputs.extend(["-loop", "1", "-t", str(end), "-i", overlay["image_path"]])
+        input_idx = i + 2  # 0=bg, 1=audio, 2+=overlays
 
         # Position overlay centred horizontally, above the caption zone
         y_pos = (CANVAS_HEIGHT - CAPTION_ZONE) // 2
         x_pos = f"(W-w)/2"
 
-        # Fade in/out with enable window
+        # Fade in/out using absolute timestamps — the looped image stream
+        # now has frames from t=0 to t=end so these times are reachable.
         fade_filter = (
             f"[{input_idx}:v]format=rgba,"
             f"fade=t=in:st={start}:d={FADE_IN_S}:alpha=1,"
@@ -141,8 +145,16 @@ def composite_video(background_path: str, audio_path: str,
         "ffmpeg", "-y",
         "-threads", "0",
         *inputs,
-        "-filter_complex", filter_complex,
-        "-map", f"[{prev_label}]",
+    ]
+
+    if filter_complex:
+        cmd.extend(["-filter_complex", filter_complex,
+                     "-map", f"[{prev_label}]"])
+    else:
+        # No overlays — pass background video through directly
+        cmd.extend(["-map", "0:v"])
+
+    cmd.extend([
         "-map", "1:a",
         "-c:v", CODEC,
         "-preset", "veryfast",
@@ -153,7 +165,7 @@ def composite_video(background_path: str, audio_path: str,
         "-movflags", "faststart",
         "-shortest",
         output_path,
-    ]
+    ])
 
     logger.info("Compositing %d overlays, output=%s", len(overlay_sequence), output_path)
     subprocess.run(cmd, check=True, capture_output=True, timeout=240)
