@@ -449,6 +449,7 @@ else:
         st.divider()
 
     # --- Generate button ---
+    st.divider()
     _col_run4, _col_demo4 = st.columns([1, 1])
     with _col_run4:
         if st.button("Generate Background", key="btn_background", type="primary"):
