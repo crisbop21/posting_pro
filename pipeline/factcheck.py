@@ -4,8 +4,6 @@ import json
 import time
 from pathlib import Path
 
-import streamlit as st
-
 from utils.api_clients import claude
 
 MAX_RETRIES = 2
@@ -71,8 +69,7 @@ def run(state: dict) -> dict:
     """
     raw_data = state.get("raw_data")
     if raw_data is None:
-        st.error("No data to fact-check. Complete Step 1 first.")
-        st.stop()
+        raise RuntimeError("No data to fact-check. Complete Step 1 first.")
 
     skill = Path("skills/factcheck_prompt.md").read_text()
     input_text = _build_input(raw_data)

@@ -3,8 +3,6 @@
 import time
 from pathlib import Path
 
-import streamlit as st
-
 from utils.api_clients import claude
 
 MAX_RETRIES = 2
@@ -22,8 +20,7 @@ def run(state: dict) -> dict:
     """
     cleaned_data = state.get("cleaned_data")
     if not cleaned_data:
-        st.error("No fact-checked data available. Complete Step 2 first.")
-        st.stop()
+        raise RuntimeError("No fact-checked data available. Complete Step 2 first.")
 
     skill = Path("skills/script_skill.md").read_text()
 
@@ -44,13 +41,9 @@ def run(state: dict) -> dict:
             state["estimated_duration_s"] = duration_s
             return state
 
-        except Exception:
+        except Exception as e:
             if attempt == MAX_RETRIES:
-                st.error(
-                    "Could not generate the script. "
-                    "Use the Retry button to try again."
-                )
-                st.stop()
+                raise RuntimeError(f"Could not generate the script: {e}") from e
             time.sleep(2 ** attempt)
 
     return state

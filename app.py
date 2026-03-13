@@ -338,7 +338,10 @@ else:
             if st.session_state.get("assembly_done"):
                 st.session_state["assembly_running"] = False
                 if st.session_state.get("assembly_error"):
-                    st.error(st.session_state["assembly_error"])
+                    st.error(
+                        f"{st.session_state['assembly_error']} "
+                        "Click **Assemble Video** to try again."
+                    )
                     st.session_state["assembly_error"] = None
                 else:
                     st.rerun()
@@ -390,21 +393,27 @@ if not st.session_state["step6_approved"]:
 else:
     step_card(7, "Download", "Your video is ready.")
 
-    from pipeline.export import run as export_run
+    try:
+        from pipeline.export import run as export_run
 
-    state = {k: st.session_state[k] for k in st.session_state}
-    export_run(state)
+        state = {k: st.session_state[k] for k in st.session_state}
+        export_run(state)
 
-    video_path = st.session_state["final_video_path"]
-    video_file = Path(video_path)
+        video_path = st.session_state["final_video_path"]
+        video_file = Path(video_path)
 
-    st.success(f"Video saved to: `{video_path}`")
+        st.success(f"Video saved to: `{video_path}`")
 
-    with open(video_file, "rb") as f:
-        st.download_button(
-            label="Download MP4",
-            data=f,
-            file_name=video_file.name,
-            mime="video/mp4",
-            type="primary",
+        with open(video_file, "rb") as f:
+            st.download_button(
+                label="Download MP4",
+                data=f,
+                file_name=video_file.name,
+                mime="video/mp4",
+                type="primary",
+            )
+    except Exception as e:
+        st.error(
+            f"Could not prepare the video for download: {e}. "
+            "You may need to reassemble in Step 6."
         )

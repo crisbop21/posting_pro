@@ -5,8 +5,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import streamlit as st
-
 from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
 from utils.video_utils import composite_video, generate_slug, CANVAS_HEIGHT, CAPTION_ZONE
 
@@ -40,13 +38,9 @@ def _generate_voiceover(script: str) -> str:
 
             return audio_path
 
-        except Exception:
+        except Exception as e:
             if attempt == MAX_RETRIES:
-                st.error(
-                    "Could not generate the voiceover. "
-                    "Use the Retry button to try again."
-                )
-                st.stop()
+                raise RuntimeError(f"Could not generate the voiceover: {e}") from e
             time.sleep(2 ** attempt)
 
     return audio_path
@@ -92,13 +86,11 @@ def run(state: dict) -> dict:
     """
     background = state.get("background_video_path")
     if not background:
-        st.error("No background video. Complete Step 4 first.")
-        st.stop()
+        raise RuntimeError("No background video. Complete Step 4 first.")
 
     script = state.get("script")
     if not script:
-        st.error("No script available. Complete Step 3 first.")
-        st.stop()
+        raise RuntimeError("No script available. Complete Step 3 first.")
 
     overlays = state.get("overlay_sequence", [])
     duration = state.get("estimated_duration_s", 60)
@@ -138,13 +130,9 @@ def run(state: dict) -> dict:
             state["final_video_path"] = output_path
             return state
 
-        except Exception:
+        except Exception as e:
             if attempt == MAX_RETRIES:
-                st.error(
-                    "Could not assemble the video. "
-                    "Use the Retry button to try again."
-                )
-                st.stop()
+                raise RuntimeError(f"Could not assemble the video: {e}") from e
             time.sleep(2 ** attempt)
 
     return state

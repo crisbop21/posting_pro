@@ -5,8 +5,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
-import streamlit as st
-
 from utils.api_clients import claude, MARKETAUX_API_KEY, FINNHUB_API_KEY
 
 MAX_RETRIES = 2
@@ -104,10 +102,7 @@ def _research_custom_topic(topic: str) -> str:
             return response.content[0].text
         except Exception:
             if attempt == MAX_RETRIES:
-                st.error(
-                    "Could not research this topic. Use the Retry button to try again."
-                )
-                st.stop()
+                raise RuntimeError("Could not research this topic.") from None
             time.sleep(2 ** attempt)
     return ""
 
@@ -129,22 +124,16 @@ def run(state: dict) -> dict:
             # Silent fallback to Finnhub — do not surface to user
             articles = _fetch_finnhub()
         if not articles:
-            st.error(
-                "Could not fetch any news articles. "
-                "Use the Retry button to try again."
-            )
-            st.stop()
+            raise RuntimeError("Could not fetch any news articles.")
         state["raw_data"] = articles
 
     elif mode == "custom_topic":
         topic = state.get("custom_topic", "")
         if not topic.strip():
-            st.error("Please enter a topic before gathering data.")
-            st.stop()
+            raise RuntimeError("Please enter a topic before gathering data.")
         state["raw_data"] = _research_custom_topic(topic)
 
     else:
-        st.error("Please select a topic mode.")
-        st.stop()
+        raise RuntimeError("Please select a topic mode.")
 
     return state

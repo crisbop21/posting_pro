@@ -76,8 +76,7 @@ def run(state: dict) -> dict:
     """
     script = state.get("script")
     if not script:
-        st.error("No script available. Complete Step 3 first.")
-        st.stop()
+        raise RuntimeError("No script available. Complete Step 3 first.")
 
     markers = _extract_image_markers(script)
     if not markers:
