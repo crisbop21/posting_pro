@@ -8,7 +8,6 @@ import streamlit as st
 
 from utils.state import DEFAULT_STATE, init_state
 from utils.styles import VISUAL_STYLES
-from utils.demo import load_demo
 from utils.ui_components import (
     approval_bar,
     demo_badge,
@@ -55,6 +54,8 @@ st.caption("Finance & AI short-form vertical videos — fully orchestrated.")
 
 def _apply_demo(step: int):
     """Load demo data for a step into session state."""
+    from utils.demo import load_demo
+
     data = load_demo(step)
     for k, v in data.items():
         if k in DEFAULT_STATE:
