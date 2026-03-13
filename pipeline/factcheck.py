@@ -88,13 +88,11 @@ def run(state: dict) -> dict:
             state["cleaned_data"] = result.get("cleaned_data", "")
             return state
 
-        except Exception:
+        except Exception as e:
             if attempt == MAX_RETRIES:
-                st.error(
-                    "Could not complete fact-checking. "
-                    "Use the Retry button to try again."
-                )
-                st.stop()
+                raise RuntimeError(
+                    f"Fact-checking failed after {MAX_RETRIES + 1} attempts: {e}"
+                ) from e
             time.sleep(2 ** attempt)
 
     return state

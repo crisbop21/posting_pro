@@ -101,15 +101,21 @@ else:
     # Run fact-check if not yet done
     if st.session_state.get("cleaned_data") is None:
         if st.button("Run Fact-Check", key="btn_factcheck", type="primary"):
-            with st.spinner("Fact-checking with Claude..."):
-                from pipeline.factcheck import run as factcheck_run
+            try:
+                with st.spinner("Fact-checking with Claude..."):
+                    from pipeline.factcheck import run as factcheck_run
 
-                state = {k: st.session_state[k] for k in st.session_state}
-                state = factcheck_run(state)
-                for k, v in state.items():
-                    if k in DEFAULT_STATE:
-                        st.session_state[k] = v
-            st.rerun()
+                    state = {k: st.session_state[k] for k in st.session_state}
+                    state = factcheck_run(state)
+                    for k, v in state.items():
+                        if k in DEFAULT_STATE:
+                            st.session_state[k] = v
+                st.rerun()
+            except Exception as e:
+                st.error(
+                    f"Could not complete fact-checking: {e}. "
+                    "Click **Run Fact-Check** to try again."
+                )
     else:
         # Display fact-check flags
         flags = st.session_state.get("factcheck_flags", [])
