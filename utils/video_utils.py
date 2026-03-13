@@ -4,6 +4,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Canvas dimensions for 9:16 vertical video
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
@@ -53,9 +57,11 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
 
     cmd = [
         "ffmpeg", "-y",
+        "-threads", "0",
         "-i", image_path,
         "-vf", zp_filter,
         "-c:v", CODEC,
+        "-preset", "veryfast",
         "-crf", CRF,
         "-pix_fmt", "yuv420p",
         "-movflags", "faststart",
@@ -63,6 +69,7 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
         output_path,
     ]
 
+    logger.info("Ken Burns render: duration=%.1fs, output=%s", duration_s, output_path)
     result = subprocess.run(cmd, capture_output=True, timeout=300)
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace")[-500:]
@@ -86,6 +93,15 @@ def composite_video(background_path: str, audio_path: str,
     Returns:
         Path to the composited video file.
     """
+    # Validate inputs exist before launching FFmpeg
+    for label, fpath in [("Background video", background_path),
+                         ("Audio file", audio_path)]:
+        if not Path(fpath).exists():
+            raise RuntimeError(f"{label} not found: {fpath}")
+    for i, ov in enumerate(overlay_sequence):
+        if not Path(ov["image_path"]).exists():
+            raise RuntimeError(f"Overlay image {i + 1} not found: {ov['image_path']}")
+
     # Build the FFmpeg filter complex for overlays
     inputs = ["-i", background_path, "-i", audio_path]
     filter_parts = []
@@ -123,11 +139,13 @@ def composite_video(background_path: str, audio_path: str,
 
     cmd = [
         "ffmpeg", "-y",
+        "-threads", "0",
         *inputs,
         "-filter_complex", filter_complex,
         "-map", f"[{prev_label}]",
         "-map", "1:a",
         "-c:v", CODEC,
+        "-preset", "veryfast",
         "-crf", CRF,
         "-c:a", "aac",
         "-b:a", "192k",
@@ -137,6 +155,7 @@ def composite_video(background_path: str, audio_path: str,
         output_path,
     ]
 
+    logger.info("Compositing %d overlays, output=%s", len(overlay_sequence), output_path)
     subprocess.run(cmd, check=True, capture_output=True, timeout=240)
     return output_path
 
