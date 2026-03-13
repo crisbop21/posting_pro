@@ -29,14 +29,18 @@ def run(state: dict) -> dict:
     """
     style_key = state.get("visual_style")
     if not style_key or style_key not in VISUAL_STYLES:
-        st.error("Please select a visual style.")
+        st.error(
+            "Please select a visual style. "
+            "Use the **Generate Background** button to try again."
+        )
         st.stop()
 
     # Pre-flight: check that ffmpeg is available
     if not shutil.which("ffmpeg"):
         st.error(
             "FFmpeg is not installed on this system. "
-            "Please install it (e.g. `apt-get install ffmpeg`) and try again."
+            "Please install it (e.g. `apt-get install ffmpeg`) and then "
+            "use the **Generate Background** button to try again."
         )
         st.stop()
 
