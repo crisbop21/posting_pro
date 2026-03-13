@@ -9,8 +9,8 @@ from pathlib import Path
 from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
 from utils.video_utils import composite_video, generate_slug, CANVAS_HEIGHT, CAPTION_ZONE
 
-MAX_RETRIES = 2
-VOICEOVER_TIMEOUT_S = 120  # max seconds to wait for ElevenLabs
+MAX_RETRIES = 1
+VOICEOVER_TIMEOUT_S = 90  # max seconds to wait for ElevenLabs
 
 
 def _generate_voiceover(script: str) -> str:
@@ -99,12 +99,23 @@ def run(state: dict) -> dict:
     background = state.get("background_video_path")
     if not background:
         raise RuntimeError("No background video. Complete Step 4 first.")
+    if not Path(background).exists():
+        raise RuntimeError(
+            f"Background video file missing: {background}. "
+            "Re-run Step 4 to regenerate it."
+        )
 
     script = state.get("script")
     if not script:
         raise RuntimeError("No script available. Complete Step 3 first.")
 
     overlays = state.get("overlay_sequence", [])
+    missing = [p for p in overlays if not Path(p).exists()]
+    if missing:
+        raise RuntimeError(
+            f"{len(missing)} overlay image(s) missing. "
+            "Re-run Step 5 to regenerate them."
+        )
     duration = state.get("estimated_duration_s", 60)
 
     # Generate voiceover
