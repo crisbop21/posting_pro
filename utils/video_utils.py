@@ -1,6 +1,6 @@
 """Ken Burns renderer, color grading, cropping, and FFmpeg video compositor."""
 
-import json
+import random
 import subprocess
 import tempfile
 from pathlib import Path
@@ -68,9 +68,46 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
         x_expr = "iw/2-(iw/zoom/2)"
         y_expr = "ih/2-(ih/zoom/2)"
 
+    # Randomize the Ken Burns direction so each render feels unique.
+    # Pick a pan direction and whether we zoom in or out.
+    zoom_step = (zoom_end - zoom_start) / max(total_frames, 1)
+    pan_direction = random.choice(["center", "left_to_right", "right_to_left",
+                                   "top_to_bottom", "bottom_to_top"])
+    zoom_in = random.choice([True, False])
+    if not zoom_in:
+        zoom_start, zoom_end = zoom_end, zoom_start
+        zoom_step = (zoom_end - zoom_start) / max(total_frames, 1)
+
+    # Pan expressions — each moves the viewport gradually across the image
+    pan_exprs = {
+        "center": (
+            "iw/2-(iw/zoom/2)",
+            "ih/2-(ih/zoom/2)",
+        ),
+        "left_to_right": (
+            f"on/{total_frames}*(iw-iw/zoom)",
+            "ih/2-(ih/zoom/2)",
+        ),
+        "right_to_left": (
+            f"(1-on/{total_frames})*(iw-iw/zoom)",
+            "ih/2-(ih/zoom/2)",
+        ),
+        "top_to_bottom": (
+            "iw/2-(iw/zoom/2)",
+            f"on/{total_frames}*(ih-ih/zoom)",
+        ),
+        "bottom_to_top": (
+            "iw/2-(iw/zoom/2)",
+            f"(1-on/{total_frames})*(ih-ih/zoom)",
+        ),
+    }
+    x_expr, y_expr = pan_exprs[pan_direction]
+
+    logger.info("Ken Burns style: pan=%s, zoom_in=%s", pan_direction, zoom_in)
+
     zp_filter = (
         f"zoompan="
-        f"z='{z_expr}':"
+        f"z='if(eq(on,1),{zoom_start},{zoom_start}+(on-1)*{zoom_step})':"
         f"d={total_frames}:"
         f"x='{x_expr}':"
         f"y='{y_expr}':"

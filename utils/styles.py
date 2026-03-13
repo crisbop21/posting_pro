@@ -1,19 +1,26 @@
 """Visual style definitions for background generation.
 
-Each style maps to a DALL-E prompt template, color grade parameters,
-and available background modes. The {topic} placeholder is replaced
-at runtime with the video's topic string.
+Each style maps to a DALL-E prompt template (used as fallback) and a style
+brief that the background_skill uses to craft a topic-aware prompt via Claude.
 """
 
 VISUAL_STYLES = {
     "cinematic": {
         "label": "Cinematic",
-        "description": "Dark, dramatic lighting with rich contrast and depth of field",
+        "description": "Dark, dramatic lighting with extreme contrast — Roger Deakins mood",
+        "style_brief": (
+            "Anamorphic lens bokeh, film-grade colour grading, extreme shallow depth "
+            "of field, true-black shadows with a single intense light source. "
+            "Roger Deakins inspired. Push luminance contrast to the maximum."
+        ),
         "dalle_prompt": (
-            "A cinematic wide-angle photograph with dramatic lighting, deep shadows, "
-            "and rich warm-cool contrast. Abstract financial theme related to {topic}. "
-            "Shallow depth of field, anamorphic lens flare, 9:16 vertical composition. "
-            "No text, no people, no logos."
+            "A cinematic wide-angle scene with deep true-black shadows and a single "
+            "intense warm light source cutting through dark atmosphere. Abstract financial "
+            "theme related to {topic}. Volumetric light rays, floating dust particles, "
+            "anamorphic lens flare, extreme shallow depth of field. Wet reflective surface "
+            "in foreground. 9:16 vertical composition. No text, no words, no letters, "
+            "no numbers, no watermarks. No people, no faces, no hands. No logos, "
+            "no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
         "color_grade": {
             "brightness": 0.0,
@@ -26,11 +33,19 @@ VISUAL_STYLES = {
     },
     "clean": {
         "label": "Clean",
-        "description": "Minimal, bright, modern design with soft gradients",
+        "description": "Ultra-minimal dark space with one vivid accent — Apple aesthetic",
+        "style_brief": (
+            "Ultra-minimal, geometric precision, dark negative space with a single "
+            "intensely vivid accent colour element. Apple product photography aesthetic "
+            "in a dark room. Dopamine from precision and colour isolation."
+        ),
         "dalle_prompt": (
-            "A clean, minimal abstract background with soft pastel gradients and "
-            "geometric shapes. Modern corporate feel related to {topic}. Bright, airy "
-            "lighting, 9:16 vertical composition. No text, no people, no logos."
+            "An ultra-minimal dark background with a single vivid geometric accent "
+            "element glowing against deep black negative space. Modern and precise, "
+            "related to {topic}. One saturated colour pop against monochrome. Glass "
+            "or metallic surface texture. 9:16 vertical composition. No text, no words, "
+            "no letters, no numbers, no watermarks. No people, no faces, no hands. "
+            "No logos, no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
         "color_grade": {
             "brightness": 0.1,
@@ -43,12 +58,19 @@ VISUAL_STYLES = {
     },
     "vintage": {
         "label": "Vintage",
-        "description": "Warm film grain look with muted tones",
+        "description": "Warm film grain with one Kodachrome colour anomaly — dark academia",
+        "style_brief": (
+            "Warm analogue film grain adding tactile texture. Muted earth tones with "
+            "one vivid Kodachrome-anomaly accent colour. Slight vignette, nostalgic "
+            "warmth. Wes Anderson meets dark academia. Rich material textures."
+        ),
         "dalle_prompt": (
-            "A vintage-style photograph with warm film grain, muted earthy tones, and "
-            "subtle vignette. Abstract financial or technology theme related to {topic}. "
-            "Analog film aesthetic, 9:16 vertical composition. No text, no people, "
-            "no logos."
+            "A vintage-style photograph with rich warm film grain, muted earthy tones, "
+            "and a single vivid warm accent light source. Dark wood and leather textures, "
+            "soft vignette. Abstract financial theme related to {topic}. Rain on a window "
+            "creating bokeh. 9:16 vertical composition. No text, no words, no letters, "
+            "no numbers, no watermarks. No people, no faces, no hands. No logos, "
+            "no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
         "color_grade": {
             "brightness": 0.0,
@@ -61,12 +83,38 @@ VISUAL_STYLES = {
     },
     "dynamic": {
         "label": "Dynamic",
-        "description": "Bold colours, motion blur, energetic feel",
+        "description": "Neon energy, impossible geometry — Blade Runner meets data viz",
+        "style_brief": (
+            "Maximum energy. Neon light trails, motion blur on particles, electric "
+            "colour palette. Impossible geometry, surreal scale distortion. "
+            "Blade Runner 2049 meets financial data visualization."
+        ),
         "dalle_prompt": (
-            "A dynamic abstract background with bold neon colours, motion blur streaks, "
-            "and energetic geometric patterns. Futuristic tech and finance theme related "
-            "to {topic}. High energy, 9:16 vertical composition. No text, no people, "
-            "no logos."
+            "A dynamic futuristic scene with bold neon light trails streaking through "
+            "dark geometric architecture. Electric cyan and hot magenta against deep "
+            "black. Motion blur energy, floating light particles, surreal scale. "
+            "Related to {topic}. Converging lines toward a glowing vanishing point. "
+            "9:16 vertical composition. No text, no words, no letters, no numbers, "
+            "no watermarks. No people, no faces, no hands. No logos, no brand names. "
+            "Photorealistic, ultra high detail, 8K quality."
+        ),
+    },
+    "hypnotic": {
+        "label": "Hypnotic",
+        "description": "Dreamlike iridescence, infinite depth — deep ocean meets luxury",
+        "style_brief": (
+            "Slow, mesmerizing, dreamlike. Iridescent surfaces, oil-on-water colour "
+            "shifts, glass refractions, bioluminescent glow. Infinite depth tunnel. "
+            "Deep ocean meets luxury brand commercial."
+        ),
+        "dalle_prompt": (
+            "A hypnotic dreamlike scene with iridescent surfaces shifting between "
+            "purple, teal, and gold. Oil-on-water colour refraction, bioluminescent "
+            "glow emanating from within a deep tunnel-like composition receding to "
+            "infinity. Glass and liquid textures, floating luminous particles. "
+            "Related to {topic}. 9:16 vertical composition. No text, no words, "
+            "no letters, no numbers, no watermarks. No people, no faces, no hands. "
+            "No logos, no brand names. Photorealistic, ultra high detail, 8K quality."
         ),
         "color_grade": {
             "brightness": 0.0,
