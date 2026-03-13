@@ -31,8 +31,10 @@ DEFAULT_STATE = {
     # Step 4 — Background generation
     "visual_style": None,         # "cinematic" | "clean" | "vintage" | "dynamic" | "hypnotic"
     "background_video_path": None,
-    "broll_search_query": "",     # user keyword for Pexels b-roll search
-    "broll_search_results": [],   # list of {id, image, url, duration, width, height} from Pexels
+    "background_mode": None,              # "ai_generated" | "stock_broll" | "green_screen" | "hybrid"
+    "background_recommendation": None,    # dict from Claude recommendation
+    "broll_search_results": [],           # list of Pexels video dicts from manual search
+    "broll_selected_url": None,           # URL of user-selected B-Roll video file
 
     # Step 5 — Image sourcing
     "overlay_sequence": [],       # list of image paths in script order

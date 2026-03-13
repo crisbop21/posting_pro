@@ -400,79 +400,53 @@ else:
             f"(Claude recommended {BACKGROUND_MODES[rec['recommended_mode']]['label']})"
         )
 
-    # --- B-Roll Search ---
-    st.divider()
-    st.subheader("Search B-Roll")
-    st.caption("Search for specific b-roll footage by keyword. Pick a clip and it will be used as your background.")
+    # --- Search B-Roll (for stock_broll and hybrid modes) ---
+    if selected_mode in ("stock_broll", "hybrid"):
+        st.divider()
+        st.subheader("Search B-Roll 🔗")
+        st.caption("Search for specific b-roll footage by keyword. Pick a clip and it will be used as your background.")
 
-    _search_col1, _search_col2 = st.columns([3, 1])
-    with _search_col1:
-        broll_query = st.text_input(
-            "Search keyword",
-            value=st.session_state.get("broll_search_query", ""),
-            placeholder="e.g. city skyline, stock market, ocean waves",
-            key="input_broll_search",
-        )
-    with _search_col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        search_clicked = st.button("Search B-Roll", key="btn_search_broll", type="secondary")
+        _col_kw, _col_btn_search = st.columns([4, 1])
+        with _col_kw:
+            broll_keyword = st.text_input("Search keyword", value="", key="broll_search_keyword")
+        with _col_btn_search:
+            st.markdown("<br>", unsafe_allow_html=True)
+            search_clicked = st.button("Search B-Roll", key="btn_search_broll")
 
-    if search_clicked and broll_query.strip():
-        try:
-            with st.spinner(f"Searching Pexels for \"{broll_query}\"..."):
-                from pipeline.background import search_broll
+        if search_clicked and broll_keyword.strip():
+            try:
+                with st.spinner("Searching Pexels for b-roll..."):
+                    from pipeline.background import search_pexels_videos
 
-                results = search_broll(broll_query.strip())
-                st.session_state["broll_search_query"] = broll_query.strip()
-                st.session_state["broll_search_results"] = results
-            if not results:
-                st.warning("No videos found. Try a different keyword.")
-            st.rerun()
-        except Exception as e:
-            msg = str(e).rstrip(". ")
-            st.error(f"Search failed: {msg}. Try again.")
+                    results = search_pexels_videos(broll_keyword.strip())
+                    st.session_state["broll_search_results"] = results
+                    st.session_state["broll_selected_url"] = None
+                st.rerun()
+            except Exception as e:
+                msg = str(e).rstrip(". ")
+                st.error(f"Search failed: {msg}. Try again.")
 
-    # Display search results
-    broll_results = st.session_state.get("broll_search_results", [])
-    if broll_results:
-        st.markdown(f"**{len(broll_results)} results** for \"{st.session_state.get('broll_search_query', '')}\"")
-        cols_per_row = 3
-        for row_start in range(0, len(broll_results), cols_per_row):
-            row_items = broll_results[row_start:row_start + cols_per_row]
-            cols = st.columns(cols_per_row)
-            for col_idx, item in enumerate(row_items):
-                with cols[col_idx]:
-                    if item.get("image"):
-                        st.image(item["image"], use_container_width=True)
-                    st.caption(f"{item['duration']}s  |  {item['width']}x{item['height']}")
-                    if st.button("Use this clip", key=f"btn_broll_{item['id']}"):
-                        try:
-                            with st.spinner("Downloading and cropping b-roll..."):
-                                from pipeline.background import fetch_broll_by_url
-                                from utils.video_utils import apply_color_grade
+        # Display search results
+        results = st.session_state.get("broll_search_results", [])
+        if results:
+            st.write(f"**{len(results)} clips found.** Select one to use as your background.")
+            cols = st.columns(min(len(results), 4))
+            for i, clip in enumerate(results):
+                with cols[i % 4]:
+                    if clip.get("image"):
+                        st.image(clip["image"], use_container_width=True)
+                    st.caption(f"{clip.get('duration', '?')}s · {clip.get('width', '?')}×{clip.get('height', '?')}")
+                    if st.button("Use this clip", key=f"btn_broll_{i}"):
+                        st.session_state["broll_selected_url"] = clip["video_url"]
+                        st.success("Clip selected! Click **Generate Background** to proceed.")
+                        st.rerun()
 
-                                state = {k: st.session_state[k] for k in st.session_state}
-                                cropped_path = fetch_broll_by_url(item["url"], state)
+            if st.session_state.get("broll_selected_url"):
+                st.success("B-roll clip selected. Click **Generate Background** to download and process it.")
+        elif search_clicked:
+            st.warning("No results found. Try a different keyword.")
 
-                                # Apply color grading if style has it
-                                style_key = st.session_state.get("visual_style", "cinematic")
-                                style = VISUAL_STYLES.get(style_key, {})
-                                grade_params = style.get("color_grade")
-                                if grade_params:
-                                    graded_path = f"tmp/background_{style_key}_graded.mp4"
-                                    try:
-                                        apply_color_grade(cropped_path, graded_path, grade_params)
-                                        st.session_state["background_video_path"] = graded_path
-                                    except Exception:
-                                        st.session_state["background_video_path"] = cropped_path
-                                else:
-                                    st.session_state["background_video_path"] = cropped_path
-
-                                st.session_state["background_mode"] = "stock_broll"
-                            st.rerun()
-                        except Exception as e:
-                            msg = str(e).rstrip(". ")
-                            st.error(f"Could not use this clip: {msg}. Try another.")
+        st.divider()
 
     # --- Generate button ---
     st.divider()
