@@ -52,8 +52,7 @@ def test_overlay_timing_single_overlay():
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-@patch("pipeline.assemble.st")
-def test_assemble_success(mock_st, mock_eleven, mock_composite):
+def test_assemble_success(mock_eleven, mock_composite):
     """Full assembly should set final_video_path with correct naming."""
     # Mock ElevenLabs
     mock_eleven.text_to_speech.convert.return_value = [b"fake audio data"]
@@ -80,8 +79,7 @@ def test_assemble_success(mock_st, mock_eleven, mock_composite):
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-@patch("pipeline.assemble.st")
-def test_assemble_output_naming(mock_st, mock_eleven, mock_composite):
+def test_assemble_output_naming(mock_eleven, mock_composite):
     """Output file should be outputs/{slug}-{YYYYMMDD}.mp4."""
     mock_eleven.text_to_speech.convert.return_value = [b"audio"]
     mock_composite.side_effect = lambda **kwargs: kwargs["output_path"]
@@ -112,8 +110,7 @@ def test_assemble_output_naming(mock_st, mock_eleven, mock_composite):
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-@patch("pipeline.assemble.st")
-def test_assemble_voiceover_strips_markers(mock_st, mock_eleven, mock_composite):
+def test_assemble_voiceover_strips_markers(mock_eleven, mock_composite):
     """The voiceover text sent to ElevenLabs should not contain [IMAGE:] markers."""
     mock_eleven.text_to_speech.convert.return_value = [b"audio"]
     mock_composite.side_effect = lambda **kwargs: kwargs["output_path"]
@@ -137,17 +134,12 @@ def test_assemble_voiceover_strips_markers(mock_st, mock_eleven, mock_composite)
 
 # ── No background should error ────────────────────────────────────
 
-@patch("pipeline.assemble.st")
-def test_assemble_no_background(mock_st):
-    """Missing background_video_path should show error and stop."""
-    mock_st.stop.side_effect = SystemExit
-
+def test_assemble_no_background():
+    """Missing background_video_path should raise RuntimeError."""
     from pipeline.assemble import run
 
     state = mock_state(up_to_step=4)
     state["background_video_path"] = None
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(RuntimeError, match="No background video"):
         run(state)
-
-    mock_st.error.assert_called_once()
