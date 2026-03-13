@@ -34,7 +34,7 @@ def run(state: dict) -> dict:
     if not shutil.which("ffmpeg"):
         raise RuntimeError(
             "FFmpeg is not installed on this system. "
-            "Please install it (e.g. `apt-get install ffmpeg`) and try again."
+            "Ensure `ffmpeg` is listed in packages.txt and redeploy"
         )
 
     duration = state.get("estimated_duration_s", 60)

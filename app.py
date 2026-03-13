@@ -72,8 +72,9 @@ if st.button("Gather Data", key="btn_gather", type="primary"):
                     st.session_state[k] = v
         st.rerun()
     except Exception as e:
+        msg = str(e).rstrip(". ")
         st.error(
-            f"Could not gather data: {e}. "
+            f"Could not gather data: {msg}. "
             "Click **Gather Data** to try again."
         )
 
@@ -118,8 +119,9 @@ else:
                             st.session_state[k] = v
                 st.rerun()
             except Exception as e:
+                msg = str(e).rstrip(". ")
                 st.error(
-                    f"Could not complete fact-checking: {e}. "
+                    f"Could not complete fact-checking: {msg}. "
                     "Click **Run Fact-Check** to try again."
                 )
     else:
@@ -173,8 +175,9 @@ else:
                             st.session_state[k] = v
                 st.rerun()
             except Exception as e:
+                msg = str(e).rstrip(". ")
                 st.error(
-                    f"Could not generate the script: {e}. "
+                    f"Could not generate the script: {msg}. "
                     "Click **Generate Script** to try again."
                 )
     else:
@@ -243,8 +246,9 @@ else:
                         st.session_state[k] = v
             st.rerun()
         except Exception as e:
+            msg = str(e).rstrip(". ")
             st.error(
-                f"Could not generate the background: {e}. "
+                f"Could not generate the background: {msg}. "
                 "Click **Generate Background** to try again."
             )
 
@@ -280,8 +284,9 @@ else:
                             st.session_state[k] = v
                 st.rerun()
             except Exception as e:
+                msg = str(e).rstrip(". ")
                 st.error(
-                    f"Could not source images: {e}. "
+                    f"Could not source images: {msg}. "
                     "Click **Source Images** to try again."
                 )
     else:
@@ -338,8 +343,9 @@ else:
             if st.session_state.get("assembly_done"):
                 st.session_state["assembly_running"] = False
                 if st.session_state.get("assembly_error"):
+                    err_msg = st.session_state["assembly_error"].rstrip(". ")
                     st.error(
-                        f"{st.session_state['assembly_error']} "
+                        f"{err_msg}. "
                         "Click **Assemble Video** to try again."
                     )
                     st.session_state["assembly_error"] = None
@@ -413,7 +419,8 @@ else:
                 type="primary",
             )
     except Exception as e:
+        msg = str(e).rstrip(". ")
         st.error(
-            f"Could not prepare the video for download: {e}. "
+            f"Could not prepare the video for download: {msg}. "
             "You may need to reassemble in Step 6."
         )
