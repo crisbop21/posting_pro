@@ -30,6 +30,8 @@ DEFAULT_STATE = {
 
     # Step 4 — Background generation
     "visual_style": None,         # "cinematic" | "clean" | "vintage" | "dynamic"
+    "background_mode": None,      # "ai_generated" | "stock_broll" | "green_screen" | "hybrid"
+    "background_recommendation": None,  # dict from Claude: {recommended_mode, pexels_queries, ken_burns_pattern, reasoning}
     "background_video_path": None,
 
     # Step 5 — Image sourcing

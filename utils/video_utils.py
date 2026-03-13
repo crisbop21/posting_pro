@@ -1,5 +1,6 @@
-"""Ken Burns renderer and FFmpeg video compositor."""
+"""Ken Burns renderer, color grading, cropping, and FFmpeg video compositor."""
 
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -26,7 +27,7 @@ CODEC = "libx264"
 
 def render_ken_burns(image_path: str, duration_s: float, output_path: str,
                      zoom_start: float = 1.0, zoom_end: float = 1.2,
-                     fps: int = 30) -> str:
+                     fps: int = 30, direction: str = "zoom_in") -> str:
     """Generate a Ken Burns pan-and-zoom video from a still image.
 
     Args:
@@ -36,21 +37,43 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
         zoom_start: Starting zoom factor.
         zoom_end: Ending zoom factor.
         fps: Frames per second.
+        direction: Animation direction — "zoom_in", "zoom_out", "pan_left", "pan_right".
 
     Returns:
         Path to the rendered video file.
     """
     total_frames = int(duration_s * fps)
+    zoom_step = (zoom_end - zoom_start) / max(total_frames, 1)
 
-    # FFmpeg zoompan filter for smooth Ken Burns effect
-    # zoompan: z increases linearly from zoom_start to zoom_end
-    # x and y pan slowly from center
+    if direction == "zoom_out":
+        # Reverse: start zoomed in, end at normal
+        z_expr = f"if(eq(on,1),{zoom_end},{zoom_end}-(on-1)*{zoom_step})"
+        x_expr = "iw/2-(iw/zoom/2)"
+        y_expr = "ih/2-(ih/zoom/2)"
+    elif direction == "pan_left":
+        # Fixed zoom at midpoint, pan from right to left
+        mid_zoom = (zoom_start + zoom_end) / 2
+        z_expr = str(mid_zoom)
+        x_expr = f"iw/zoom-iw/zoom*on/{total_frames}"
+        y_expr = "ih/2-(ih/zoom/2)"
+    elif direction == "pan_right":
+        # Fixed zoom at midpoint, pan from left to right
+        mid_zoom = (zoom_start + zoom_end) / 2
+        z_expr = str(mid_zoom)
+        x_expr = f"iw/zoom*on/{total_frames}"
+        y_expr = "ih/2-(ih/zoom/2)"
+    else:
+        # Default: zoom_in — original behavior
+        z_expr = f"if(eq(on,1),{zoom_start},{zoom_start}+(on-1)*{zoom_step})"
+        x_expr = "iw/2-(iw/zoom/2)"
+        y_expr = "ih/2-(ih/zoom/2)"
+
     zp_filter = (
         f"zoompan="
-        f"z='if(eq(on,1),{zoom_start},{zoom_start}+(on-1)*{(zoom_end - zoom_start) / max(total_frames, 1)})':"
+        f"z='{z_expr}':"
         f"d={total_frames}:"
-        f"x='iw/2-(iw/zoom/2)':"
-        f"y='ih/2-(ih/zoom/2)':"
+        f"x='{x_expr}':"
+        f"y='{y_expr}':"
         f"s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:"
         f"fps={fps}"
     )
@@ -69,11 +92,201 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
         output_path,
     ]
 
-    logger.info("Ken Burns render: duration=%.1fs, output=%s", duration_s, output_path)
+    logger.info("Ken Burns render: direction=%s, duration=%.1fs, output=%s",
+                direction, duration_s, output_path)
     result = subprocess.run(cmd, capture_output=True, timeout=300)
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace")[-500:]
         raise RuntimeError(f"ffmpeg exited with code {result.returncode}: {stderr}")
+    return output_path
+
+
+def apply_color_grade(input_path: str, output_path: str, grade_params: dict) -> str:
+    """Apply LUT-style color grading to a video using FFmpeg filters.
+
+    Args:
+        input_path: Path to the source video.
+        output_path: Path for the graded output video.
+        grade_params: Dict with keys: brightness, contrast, saturation, warmth, vignette.
+
+    Returns:
+        Path to the graded video file.
+    """
+    brightness = grade_params.get("brightness", 0.0)
+    contrast = grade_params.get("contrast", 1.0)
+    saturation = grade_params.get("saturation", 1.0)
+    warmth = grade_params.get("warmth", 0.0)
+    vignette = grade_params.get("vignette", False)
+
+    filters = []
+
+    # Core eq filter for brightness, contrast, saturation
+    eq_parts = []
+    eq_parts.append(f"brightness={brightness}")
+    eq_parts.append(f"contrast={contrast}")
+    eq_parts.append(f"saturation={saturation}")
+    filters.append(f"eq={':'.join(eq_parts)}")
+
+    # Warmth via color temperature shift (approximate with colorbalance)
+    if warmth != 0.0:
+        # Positive warmth = more red/yellow shadows, negative = more blue
+        rs = max(min(warmth * 0.3, 1.0), -1.0)
+        bs = max(min(-warmth * 0.3, 1.0), -1.0)
+        filters.append(f"colorbalance=rs={rs}:bs={bs}")
+
+    # Vignette
+    if vignette:
+        filters.append("vignette=PI/4")
+
+    filter_chain = ",".join(filters)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-threads", "0",
+        "-i", input_path,
+        "-vf", filter_chain,
+        "-c:v", CODEC,
+        "-preset", "veryfast",
+        "-crf", CRF,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
+        "-movflags", "faststart",
+        output_path,
+    ]
+
+    logger.info("Color grade: %s -> %s (params=%s)", input_path, output_path, grade_params)
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace")[-500:]
+        raise RuntimeError(f"Color grading failed (code {result.returncode}): {stderr}")
+    return output_path
+
+
+def crop_to_vertical(input_path: str, output_path: str,
+                     target_w: int = CANVAS_WIDTH,
+                     target_h: int = CANVAS_HEIGHT) -> str:
+    """Smart-crop a video to 9:16 vertical from its center.
+
+    Args:
+        input_path: Path to the source video (typically landscape).
+        output_path: Path for the cropped output video.
+        target_w: Target width in pixels.
+        target_h: Target height in pixels.
+
+    Returns:
+        Path to the cropped video file.
+    """
+    # Probe source dimensions
+    probe_cmd = [
+        "ffprobe", "-v", "quiet",
+        "-print_format", "json",
+        "-show_streams",
+        input_path,
+    ]
+    probe_result = subprocess.run(probe_cmd, capture_output=True, timeout=30)
+    if probe_result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed for {input_path}")
+
+    streams = json.loads(probe_result.stdout)
+    video_stream = next(
+        (s for s in streams.get("streams", []) if s.get("codec_type") == "video"),
+        None,
+    )
+    if not video_stream:
+        raise RuntimeError(f"No video stream found in {input_path}")
+
+    src_w = int(video_stream["width"])
+    src_h = int(video_stream["height"])
+
+    # Calculate crop: fit to 9:16 aspect from center
+    target_ratio = target_w / target_h
+    src_ratio = src_w / src_h
+
+    if src_ratio > target_ratio:
+        # Source is wider — crop width
+        crop_h = src_h
+        crop_w = int(src_h * target_ratio)
+    else:
+        # Source is taller or same — crop height
+        crop_w = src_w
+        crop_h = int(src_w / target_ratio)
+
+    crop_filter = (
+        f"crop={crop_w}:{crop_h}:(in_w-{crop_w})/2:(in_h-{crop_h})/2,"
+        f"scale={target_w}:{target_h}"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-threads", "0",
+        "-i", input_path,
+        "-vf", crop_filter,
+        "-c:v", CODEC,
+        "-preset", "veryfast",
+        "-crf", CRF,
+        "-pix_fmt", "yuv420p",
+        "-an",
+        "-movflags", "faststart",
+        output_path,
+    ]
+
+    logger.info("Crop to vertical: %dx%d -> %dx%d, output=%s",
+                src_w, src_h, target_w, target_h, output_path)
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace")[-500:]
+        raise RuntimeError(f"Crop failed (code {result.returncode}): {stderr}")
+    return output_path
+
+
+def render_green_screen(output_path: str, duration_s: float,
+                        color_top: str = "#0a0a1a",
+                        color_bottom: str = "#1a1a3a",
+                        fps: int = 30) -> str:
+    """Generate a gradient background video for green-screen style content.
+
+    Args:
+        output_path: Path for the output MP4 file.
+        duration_s: Duration in seconds.
+        color_top: Hex color for the top of the gradient.
+        color_bottom: Hex color for the bottom of the gradient.
+        fps: Frames per second.
+
+    Returns:
+        Path to the rendered video file.
+    """
+    # FFmpeg can generate gradients using the gradients source
+    # We use two color inputs blended vertically
+    total_frames = int(duration_s * fps)
+
+    # Use a lavfi color source with a gradient overlay approach:
+    # Generate top-color base, then blend with bottom-color using a gradient mask
+    filter_complex = (
+        f"color=c={color_top}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:d={duration_s}:r={fps}[top];"
+        f"color=c={color_bottom}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:d={duration_s}:r={fps}[bottom];"
+        f"[top][bottom]blend=all_expr='A*(1-Y/H)+B*(Y/H)'[gradient];"
+        f"[gradient]noise=alls=3:allf=t[out]"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-threads", "0",
+        "-filter_complex", filter_complex,
+        "-map", "[out]",
+        "-c:v", CODEC,
+        "-preset", "veryfast",
+        "-crf", CRF,
+        "-pix_fmt", "yuv420p",
+        "-movflags", "faststart",
+        "-t", str(duration_s),
+        output_path,
+    ]
+
+    logger.info("Green screen render: %s->%s, duration=%.1fs", color_top, color_bottom, duration_s)
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace")[-500:]
+        raise RuntimeError(f"Green screen render failed (code {result.returncode}): {stderr}")
     return output_path
 
 
