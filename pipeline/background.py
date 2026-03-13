@@ -7,13 +7,52 @@ from pathlib import Path
 
 import requests
 
-from utils.api_clients import openai_client
+from utils.api_clients import claude, openai_client
 from utils.styles import VISUAL_STYLES
 from utils.video_utils import render_ken_burns
 
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 2
+
+
+def _generate_optimized_prompt(state: dict, style: dict, topic: str) -> str:
+    """Use Claude with the background skill to craft a topic-aware DALL-E prompt.
+
+    Falls back to the static template in styles.py if Claude fails.
+    """
+    skill = Path("skills/background_skill.md").read_text()
+    script = state.get("script", "")
+
+    style_key = state.get("visual_style", "cinematic")
+    style_brief = style.get("style_brief", style.get("description", ""))
+
+    user_message = (
+        f"=== TOPIC ===\n{topic}\n\n"
+        f"=== VISUAL STYLE ===\n{style_key}: {style_brief}\n\n"
+        f"=== SCRIPT ===\n{script}"
+    )
+
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            response = claude.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=500,
+                system=skill,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            prompt = response.content[0].text.strip()
+            if len(prompt) > 20:
+                logger.info("Claude-generated DALL-E prompt: %s", prompt[:120])
+                return prompt
+        except Exception:
+            logger.exception("Claude prompt generation failed (attempt %d)", attempt + 1)
+            if attempt < MAX_RETRIES:
+                time.sleep(2 ** attempt)
+
+    # Fallback to static template
+    logger.warning("Falling back to static DALL-E prompt template")
+    return style["dalle_prompt"].format(topic=topic)
 
 
 def run(state: dict) -> dict:
@@ -41,7 +80,7 @@ def run(state: dict) -> dict:
     topic = state.get("custom_topic") or "finance and AI trends"
 
     style = VISUAL_STYLES[style_key]
-    prompt = style["dalle_prompt"].format(topic=topic)
+    prompt = _generate_optimized_prompt(state, style, topic)
 
     # Generate the background image with DALL-E
     image_path = None
