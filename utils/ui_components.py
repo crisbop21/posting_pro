@@ -26,19 +26,29 @@ def locked_step(step_number: int, title: str):
     )
 
 
+def _set_state(key: str, value):
+    """Helper callback to set a session state key."""
+    st.session_state[key] = value
+
+
 def approval_bar(step_key: str, label: str = "Approve & continue"):
-    """Render approve / regenerate buttons. Returns True if approved this click."""
+    """Render approve / regenerate buttons using on_click callbacks."""
     col1, col2 = st.columns([1, 1])
-    approved = False
     with col1:
-        if st.button(f"✓ {label}", key=f"approve_{step_key}", type="primary"):
-            st.session_state[step_key] = True
-            approved = True
+        st.button(
+            f"✓ {label}",
+            key=f"approve_{step_key}",
+            type="primary",
+            on_click=_set_state,
+            args=(step_key, True),
+        )
     with col2:
-        if st.button("↻ Regenerate", key=f"regen_{step_key}"):
-            st.session_state[step_key] = False
-            approved = False
-    return approved
+        st.button(
+            "↻ Regenerate",
+            key=f"regen_{step_key}",
+            on_click=_set_state,
+            args=(step_key, False),
+        )
 
 
 def image_card(image_path: str, caption: str = "", selected: bool = False):
