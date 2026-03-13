@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import streamlit as st
-
 
 def run(state: dict) -> dict:
     """Execute Step 7: validate the final video exists and is ready.
@@ -20,22 +18,19 @@ def run(state: dict) -> dict:
     video_path = state.get("final_video_path")
 
     if not video_path:
-        st.error("No video has been assembled. Complete Step 6 first.")
-        st.stop()
+        raise RuntimeError("No video has been assembled. Complete Step 6 first.")
 
     path = Path(video_path)
     if not path.exists():
-        st.error(
+        raise RuntimeError(
             "The video file is missing. It may have been cleaned up. "
-            "Use the Retry button on Step 6 to reassemble."
+            "Reassemble in Step 6."
         )
-        st.stop()
 
     if path.stat().st_size == 0:
-        st.error(
+        raise RuntimeError(
             "The video file is empty. Something went wrong during assembly. "
-            "Use the Retry button on Step 6 to reassemble."
+            "Reassemble in Step 6."
         )
-        st.stop()
 
     return state

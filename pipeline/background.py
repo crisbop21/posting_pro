@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import requests
-import streamlit as st
 
 from utils.api_clients import openai_client
 from utils.styles import VISUAL_STYLES
@@ -29,20 +28,14 @@ def run(state: dict) -> dict:
     """
     style_key = state.get("visual_style")
     if not style_key or style_key not in VISUAL_STYLES:
-        st.error(
-            "Please select a visual style. "
-            "Use the **Generate Background** button to try again."
-        )
-        st.stop()
+        raise RuntimeError("Please select a visual style before generating a background.")
 
     # Pre-flight: check that ffmpeg is available
     if not shutil.which("ffmpeg"):
-        st.error(
+        raise RuntimeError(
             "FFmpeg is not installed on this system. "
-            "Please install it (e.g. `apt-get install ffmpeg`) and then "
-            "use the **Generate Background** button to try again."
+            "Please install it (e.g. `apt-get install ffmpeg`) and try again."
         )
-        st.stop()
 
     duration = state.get("estimated_duration_s", 60)
     topic = state.get("custom_topic") or "finance and AI trends"
@@ -76,11 +69,7 @@ def run(state: dict) -> dict:
         except Exception as e:
             logger.exception("DALL-E image generation failed (attempt %d)", attempt + 1)
             if attempt == MAX_RETRIES:
-                st.error(
-                    f"Could not generate the background image: {e}. "
-                    "Use the Retry button to try again."
-                )
-                st.stop()
+                raise RuntimeError(f"Could not generate the background image: {e}") from e
             time.sleep(2 ** attempt)
 
     # Render Ken Burns video from the still image
@@ -100,11 +89,7 @@ def run(state: dict) -> dict:
         except Exception as e:
             logger.exception("Ken Burns render failed (attempt %d)", attempt + 1)
             if attempt == MAX_RETRIES:
-                st.error(
-                    f"Could not render the background video: {e}. "
-                    "Use the Retry button to try again."
-                )
-                st.stop()
+                raise RuntimeError(f"Could not render the background video: {e}") from e
             time.sleep(2 ** attempt)
 
     return state
