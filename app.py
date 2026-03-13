@@ -61,6 +61,11 @@ def _apply_demo(step: int):
             st.session_state[k] = v
 
 
+def _select_broll_clip(url: str):
+    """Callback: select a b-roll clip by URL."""
+    st.session_state["broll_selected_url"] = url
+
+
 # ===================================================================
 # STEP 1 — Gather Data
 # ===================================================================
@@ -138,8 +143,7 @@ if st.session_state.get("raw_data") is not None:
         demo_badge(1)
 
     if not st.session_state["step1_approved"]:
-        if approval_bar("step1_approved", "Approve data & continue"):
-            st.rerun()
+        approval_bar("step1_approved", "Approve data & continue")
     else:
         st.success("Step 1 approved.")
 
@@ -204,8 +208,7 @@ else:
             demo_badge(2)
 
         if not st.session_state["step2_approved"]:
-            if approval_bar("step2_approved", "Approve & continue"):
-                st.rerun()
+            approval_bar("step2_approved", "Approve & continue")
         else:
             st.success("Step 2 approved.")
 
@@ -315,8 +318,7 @@ else:
             demo_badge(3)
 
         if not st.session_state["step3_approved"]:
-            if approval_bar("step3_approved", "Approve script & continue"):
-                st.rerun()
+            approval_bar("step3_approved", "Approve script & continue")
         else:
             st.success("Step 3 approved.")
 
@@ -436,10 +438,12 @@ else:
                     if clip.get("image"):
                         st.image(clip["image"], use_container_width=True)
                     st.caption(f"{clip.get('duration', '?')}s · {clip.get('width', '?')}×{clip.get('height', '?')}")
-                    if st.button("Use this clip", key=f"btn_broll_{i}"):
-                        st.session_state["broll_selected_url"] = clip["video_url"]
-                        st.success("Clip selected! Click **Generate Background** to proceed.")
-                        st.rerun()
+                    st.button(
+                        "Use this clip",
+                        key=f"btn_broll_{i}",
+                        on_click=_select_broll_clip,
+                        args=(clip["video_url"],),
+                    )
 
             if st.session_state.get("broll_selected_url"):
                 st.success("B-roll clip selected. Click **Generate Background** to download and process it.")
@@ -484,8 +488,7 @@ else:
             demo_badge(4)
 
         if not st.session_state["step4_approved"]:
-            if approval_bar("step4_approved", "Approve background & continue"):
-                st.rerun()
+            approval_bar("step4_approved", "Approve background & continue")
         else:
             st.success("Step 4 approved.")
 
@@ -552,8 +555,7 @@ else:
             demo_badge(5)
 
         if not st.session_state["step5_approved"]:
-            if approval_bar("step5_approved", "Approve images & continue"):
-                st.rerun()
+            approval_bar("step5_approved", "Approve images & continue")
         else:
             st.success("Step 5 approved.")
 
@@ -671,8 +673,7 @@ else:
             demo_badge(6)
 
         if not st.session_state["step6_approved"]:
-            if approval_bar("step6_approved", "Approve video & continue"):
-                st.rerun()
+            approval_bar("step6_approved", "Approve video & continue")
         else:
             st.success("Step 6 approved.")
 
