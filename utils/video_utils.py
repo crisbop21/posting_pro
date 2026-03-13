@@ -245,6 +245,9 @@ def render_green_screen(output_path: str, duration_s: float,
                         fps: int = 30) -> str:
     """Generate a gradient background video for green-screen style content.
 
+    Creates a single gradient PNG then loops it into a video, which is
+    far faster than computing a per-pixel blend across every frame.
+
     Args:
         output_path: Path for the output MP4 file.
         duration_s: Duration in seconds.
@@ -255,38 +258,51 @@ def render_green_screen(output_path: str, duration_s: float,
     Returns:
         Path to the rendered video file.
     """
-    # FFmpeg can generate gradients using the gradients source
-    # We use two color inputs blended vertically
-    total_frames = int(duration_s * fps)
+    parent = Path(output_path).parent
+    parent.mkdir(parents=True, exist_ok=True)
+    gradient_png = str(parent / "_gradient_tmp.png")
 
-    # Use a lavfi color source with a gradient overlay approach:
-    # Generate top-color base, then blend with bottom-color using a gradient mask
-    filter_complex = (
-        f"color=c={color_top}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:d={duration_s}:r={fps}[top];"
-        f"color=c={color_bottom}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:d={duration_s}:r={fps}[bottom];"
-        f"[top][bottom]blend=all_expr='A*(1-Y/H)+B*(Y/H)'[gradient];"
-        f"[gradient]noise=alls=3:allf=t[out]"
+    # Step 1: render a single gradient PNG (instant — one frame)
+    png_filter = (
+        f"color=c={color_top}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}[top];"
+        f"color=c={color_bottom}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}[bottom];"
+        f"[top][bottom]blend=all_expr='A*(1-Y/H)+B*(Y/H)'"
     )
+    png_cmd = [
+        "ffmpeg", "-y",
+        "-frames:v", "1",
+        "-filter_complex", png_filter,
+        gradient_png,
+    ]
+    result = subprocess.run(png_cmd, capture_output=True, timeout=30)
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace")[-500:]
+        raise RuntimeError(f"Gradient PNG generation failed (code {result.returncode}): {stderr}")
 
-    cmd = [
+    # Step 2: loop the still image into a video with subtle noise
+    vid_cmd = [
         "ffmpeg", "-y",
         "-threads", "0",
-        "-filter_complex", filter_complex,
-        "-map", "[out]",
+        "-loop", "1",
+        "-i", gradient_png,
+        "-vf", f"noise=alls=3:allf=t,format=yuv420p",
         "-c:v", CODEC,
         "-preset", "veryfast",
         "-crf", CRF,
-        "-pix_fmt", "yuv420p",
-        "-movflags", "faststart",
+        "-r", str(fps),
         "-t", str(duration_s),
+        "-movflags", "faststart",
         output_path,
     ]
 
     logger.info("Green screen render: %s->%s, duration=%.1fs", color_top, color_bottom, duration_s)
-    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    result = subprocess.run(vid_cmd, capture_output=True, timeout=180)
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace")[-500:]
         raise RuntimeError(f"Green screen render failed (code {result.returncode}): {stderr}")
+
+    # Clean up temp PNG
+    Path(gradient_png).unlink(missing_ok=True)
     return output_path
 
 
