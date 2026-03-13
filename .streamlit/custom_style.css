@@ -1,0 +1,137 @@
+/* Step card styling */
+.step-card {
+    background-color: #1e1e2e;
+    border: 1px solid #313244;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.step-card h3 {
+    margin-top: 0;
+    color: #cdd6f4;
+}
+
+/* Locked step overlay */
+.step-locked {
+    opacity: 0.4;
+    pointer-events: none;
+    user-select: none;
+    position: relative;
+}
+
+.step-locked::after {
+    content: "Complete the previous step to unlock";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #a6adc8;
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Approval bar */
+.approval-bar {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-top: 1px solid #313244;
+    margin-top: 1rem;
+}
+
+/* Image card grid */
+.image-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.image-card {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.image-card:hover {
+    border-color: #89b4fa;
+}
+
+.image-card.selected {
+    border-color: #a6e3a1;
+}
+
+.image-card img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Word count indicator */
+.word-count {
+    font-size: 0.85rem;
+    color: #a6adc8;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    display: inline-block;
+}
+
+.word-count.in-range {
+    color: #a6e3a1;
+}
+
+.word-count.out-of-range {
+    color: #f38ba8;
+}
+
+/* Progress indicator */
+.progress-bar {
+    height: 4px;
+    background-color: #313244;
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 0.5rem 0;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #89b4fa;
+    transition: width 0.3s ease;
+}
+
+/* Video preview container */
+.video-preview {
+    max-width: 360px;
+    margin: 1rem auto;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Fact-check flag styling */
+.factcheck-flag {
+    padding: 0.5rem 0.75rem;
+    margin: 0.25rem 0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.factcheck-flag.high {
+    background-color: rgba(166, 227, 161, 0.15);
+    border-left: 3px solid #a6e3a1;
+}
+
+.factcheck-flag.medium {
+    background-color: rgba(249, 226, 175, 0.15);
+    border-left: 3px solid #f9e2af;
+}
+
+.factcheck-flag.low {
+    background-color: rgba(243, 139, 168, 0.15);
+    border-left: 3px solid #f38ba8;
+}
