@@ -1,5 +1,6 @@
 """Step 6: Video assembly — voiceover + background + overlays."""
 
+import concurrent.futures
 import re
 import time
 from datetime import datetime
@@ -9,6 +10,7 @@ from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
 from utils.video_utils import composite_video, generate_slug, CANVAS_HEIGHT, CAPTION_ZONE
 
 MAX_RETRIES = 2
+VOICEOVER_TIMEOUT_S = 120  # max seconds to wait for ElevenLabs
 
 
 def _generate_voiceover(script: str) -> str:
@@ -24,20 +26,30 @@ def _generate_voiceover(script: str) -> str:
     Path("tmp").mkdir(exist_ok=True)
     audio_path = "tmp/voiceover.mp3"
 
+    def _call_elevenlabs():
+        audio = elevenlabs_client.text_to_speech.convert(
+            voice_id=ELEVENLABS_VOICE_ID,
+            text=clean_script,
+            model_id="eleven_multilingual_v2",
+        )
+        with open(audio_path, "wb") as f:
+            for chunk in audio:
+                f.write(chunk)
+        return audio_path
+
     for attempt in range(MAX_RETRIES + 1):
         try:
-            audio = elevenlabs_client.text_to_speech.convert(
-                voice_id=ELEVENLABS_VOICE_ID,
-                text=clean_script,
-                model_id="eleven_multilingual_v2",
-            )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(_call_elevenlabs)
+                return future.result(timeout=VOICEOVER_TIMEOUT_S)
 
-            with open(audio_path, "wb") as f:
-                for chunk in audio:
-                    f.write(chunk)
-
-            return audio_path
-
+        except concurrent.futures.TimeoutError:
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(
+                    "Voiceover generation timed out. The ElevenLabs API "
+                    "did not respond within the allowed time."
+                )
+            time.sleep(2 ** attempt)
         except Exception as e:
             if attempt == MAX_RETRIES:
                 raise RuntimeError(f"Could not generate the voiceover: {e}") from e

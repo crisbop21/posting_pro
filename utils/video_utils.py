@@ -137,7 +137,7 @@ def composite_video(background_path: str, audio_path: str,
         output_path,
     ]
 
-    subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+    subprocess.run(cmd, check=True, capture_output=True, timeout=240)
     return output_path
 
 
