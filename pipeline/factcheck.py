@@ -41,7 +41,7 @@ def _repair_json(raw_text: str) -> dict:
     """Ask Claude to fix malformed JSON output."""
     response = claude.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=2000,
+        max_tokens=8000,
         system=(
             "The following text was supposed to be valid JSON with keys "
             '"flags" (array of {claim, confidence, note}) and "cleaned_data" (string). '
@@ -73,7 +73,7 @@ def run(state: dict) -> dict:
         try:
             response = claude.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=3000,
+                max_tokens=8000,
                 system=skill,
                 messages=[{"role": "user", "content": input_text}],
             )
