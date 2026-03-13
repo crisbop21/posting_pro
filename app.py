@@ -412,25 +412,29 @@ else:
                 progress_frac = min(elapsed / ASSEMBLY_TIMEOUT_S, 0.99)
                 st.progress(progress_frac)
 
-            # Poll for completion
-            if st.session_state.get("assembly_done"):
+            # Poll for completion via the shared result dict (thread-safe)
+            _result = st.session_state.get("_assembly_result", {})
+            if _result.get("done"):
                 st.session_state["assembly_running"] = False
-                if st.session_state.get("assembly_error"):
-                    err_msg = st.session_state["assembly_error"].rstrip(". ")
+                if _result.get("error"):
+                    err_msg = _result["error"].rstrip(". ")
                     st.error(
                         f"{err_msg}. "
                         "Click **Assemble Video** to try again."
                     )
-                    st.session_state["assembly_error"] = None
-                else:
+                elif _result.get("state"):
+                    # Copy results from the thread's snapshot back into session state
+                    for k, v in _result["state"].items():
+                        if k in DEFAULT_STATE:
+                            st.session_state[k] = v
                     st.rerun()
+                else:
+                    st.error(
+                        "Assembly finished but produced no output. "
+                        "Click **Assemble Video** to try again."
+                    )
             elif started and (time.time() - started) > ASSEMBLY_TIMEOUT_S:
-                # Timed out — stop polling and surface the error.
-                # Bump generation ID so the stale background thread
-                # will not overwrite state when it eventually finishes.
                 st.session_state["assembly_running"] = False
-                st.session_state["assembly_done"] = False
-                st.session_state["assembly_error"] = None
                 st.session_state["assembly_gen_id"] = (
                     st.session_state.get("assembly_gen_id", 0) + 1
                 )
@@ -453,27 +457,35 @@ else:
                     st.session_state["assembly_error"] = None
                     st.session_state["assembly_started_at"] = time.time()
 
-                    def _assemble_in_background(_gen_id=gen_id):
+                    # --- Option A: snapshot state on the MAIN thread ---
+                    state_snapshot = {k: st.session_state[k] for k in st.session_state}
+
+                    # Diagnostic: confirm snapshot has required keys
+                    print(f"[ASSEMBLE] Snapshot keys: {len(state_snapshot)}")
+                    print(f"[ASSEMBLE] background_video_path: {state_snapshot.get('background_video_path')}")
+                    print(f"[ASSEMBLE] script length: {len(state_snapshot.get('script') or '')}")
+                    print(f"[ASSEMBLE] overlay_sequence count: {len(state_snapshot.get('overlay_sequence', []))}")
+
+                    # Shared result dict — thread writes here, main thread reads
+                    _result = {"done": False, "error": None, "state": None}
+
+                    def _assemble_in_background(_snapshot=state_snapshot, _res=_result):
                         try:
                             from pipeline.assemble import run as assemble_run
 
-                            state = {k: st.session_state[k] for k in st.session_state}
-                            state = assemble_run(state)
-                            # Only apply results if this is still the active run
-                            if st.session_state.get("assembly_gen_id") != _gen_id:
-                                return
-                            for k, v in state.items():
-                                if k in DEFAULT_STATE:
-                                    st.session_state[k] = v
+                            print("[ASSEMBLE-THREAD] Starting assembly run...")
+                            updated = assemble_run(_snapshot)
+                            print(f"[ASSEMBLE-THREAD] Done. final_video_path={updated.get('final_video_path')}")
+                            _res["state"] = updated
                         except Exception as e:
-                            if st.session_state.get("assembly_gen_id") != _gen_id:
-                                return
-                            st.session_state["assembly_error"] = str(e)
+                            print(f"[ASSEMBLE-THREAD] ERROR: {e}")
+                            _res["error"] = str(e)
                         finally:
-                            if st.session_state.get("assembly_gen_id") == _gen_id:
-                                st.session_state["assembly_done"] = True
+                            _res["done"] = True
 
                     thread = threading.Thread(target=_assemble_in_background, daemon=True)
+                    # Stash result dict in session state so the polling loop can read it
+                    st.session_state["_assembly_result"] = _result
                     thread.start()
                     st.rerun()
             with _col_demo6:
