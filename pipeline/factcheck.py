@@ -9,6 +9,7 @@ import streamlit as st
 from utils.api_clients import claude
 
 MAX_RETRIES = 2
+DELIMITER = "---CLEANED_DATA---"
 
 
 def _build_input(raw_data) -> str:
@@ -26,30 +27,37 @@ def _build_input(raw_data) -> str:
     return str(raw_data)
 
 
-def _parse_response(text: str) -> dict:
-    """Parse the fact-check JSON response, stripping markdown fences if present."""
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences if present."""
     cleaned = text.strip()
     if cleaned.startswith("```"):
-        # Remove markdown code fences
         lines = cleaned.split("\n")
         lines = [l for l in lines if not l.strip().startswith("```")]
         cleaned = "\n".join(lines)
-    return json.loads(cleaned)
+    return cleaned.strip()
 
 
-def _repair_json(raw_text: str) -> dict:
-    """Ask Claude to fix malformed JSON output."""
-    response = claude.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=8000,
-        system=(
-            "The following text was supposed to be valid JSON with keys "
-            '"flags" (array of {claim, confidence, note}) and "cleaned_data" (string). '
-            "Fix it and return ONLY valid JSON, nothing else."
-        ),
-        messages=[{"role": "user", "content": raw_text}],
-    )
-    return _parse_response(response.content[0].text)
+def _parse_response(text: str) -> dict:
+    """Parse the delimiter-separated fact-check response.
+
+    Expected format:
+        <JSON array of flags>
+        ---CLEANED_DATA---
+        <plain text cleaned data>
+    """
+    if DELIMITER not in text:
+        # Fallback: try parsing as the old single-JSON format
+        cleaned = _strip_fences(text)
+        result = json.loads(cleaned)
+        return result
+
+    parts = text.split(DELIMITER, 1)
+    flags_text = _strip_fences(parts[0])
+    cleaned_data = parts[1].strip()
+
+    flags = json.loads(flags_text)
+
+    return {"flags": flags, "cleaned_data": cleaned_data}
 
 
 def run(state: dict) -> dict:
@@ -78,11 +86,7 @@ def run(state: dict) -> dict:
                 messages=[{"role": "user", "content": input_text}],
             )
             raw_response = response.content[0].text
-
-            try:
-                result = _parse_response(raw_response)
-            except (json.JSONDecodeError, KeyError):
-                result = _repair_json(raw_response)
+            result = _parse_response(raw_response)
 
             state["factcheck_flags"] = result.get("flags", [])
             state["cleaned_data"] = result.get("cleaned_data", "")
