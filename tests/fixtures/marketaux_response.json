@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "found": 3,
+    "returned": 3,
+    "limit": 3,
+    "page": 1
+  },
+  "data": [
+    {
+      "uuid": "abc-001",
+      "title": "Fed Holds Interest Rates Steady Amid Inflation Concerns",
+      "description": "The Federal Reserve maintained its benchmark interest rate at 5.25-5.50% during its latest meeting, citing persistent inflation above the 2% target.",
+      "url": "https://example.com/fed-rates",
+      "source": "Reuters",
+      "published_at": "2026-03-12T14:30:00Z",
+      "entities": [
+        {"name": "Federal Reserve", "type": "organization"}
+      ]
+    },
+    {
+      "uuid": "abc-002",
+      "title": "NVIDIA Reports Record Q4 Revenue Driven by AI Chip Demand",
+      "description": "NVIDIA posted $22.1 billion in quarterly revenue, a 265% year-over-year increase, driven by surging demand for its H100 and upcoming B200 AI accelerators.",
+      "url": "https://example.com/nvidia-q4",
+      "source": "Bloomberg",
+      "published_at": "2026-03-12T10:00:00Z",
+      "entities": [
+        {"name": "NVIDIA", "type": "organization"}
+      ]
+    },
+    {
+      "uuid": "abc-003",
+      "title": "Bitcoin Surpasses $70,000 as Institutional Adoption Grows",
+      "description": "Bitcoin reached a new all-time high above $70,000, with analysts pointing to spot ETF inflows and growing institutional participation as key drivers.",
+      "url": "https://example.com/btc-70k",
+      "source": "CoinDesk",
+      "published_at": "2026-03-12T08:15:00Z",
+      "entities": [
+        {"name": "Bitcoin", "type": "cryptocurrency"}
+      ]
+    }
+  ]
+}
