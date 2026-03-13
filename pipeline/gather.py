@@ -11,21 +11,29 @@ MAX_RETRIES = 2
 MIN_ARTICLES = 3
 
 
-def _fetch_marketaux() -> list[dict]:
-    """Fetch recent finance articles from Marketaux."""
+def _fetch_marketaux(search: str = "") -> list[dict]:
+    """Fetch recent finance articles from Marketaux.
+
+    Args:
+        search: Optional keyword filter. When provided, only articles
+                matching these terms are returned.
+    """
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
         "%Y-%m-%dT%H:%M"
     )
+    params = {
+        "filter_entities": "true",
+        "language": "en",
+        "published_after": yesterday,
+        "api_token": MARKETAUX_API_KEY,
+    }
+    if search:
+        params["search"] = search
     for attempt in range(MAX_RETRIES + 1):
         try:
             resp = requests.get(
                 "https://api.marketaux.com/v1/news/all",
-                params={
-                    "filter_entities": "true",
-                    "language": "en",
-                    "published_after": yesterday,
-                    "api_token": MARKETAUX_API_KEY,
-                },
+                params=params,
                 timeout=15,
             )
             if resp.status_code == 429:
@@ -131,7 +139,20 @@ def run(state: dict) -> dict:
         topic = state.get("custom_topic", "")
         if not topic.strip():
             raise RuntimeError("Please enter a topic before gathering data.")
-        state["raw_data"] = _research_custom_topic(topic)
+
+        # Hybrid gather: Claude research + real news articles on the topic
+        research = _research_custom_topic(topic)
+
+        # Search Marketaux filtered by the custom topic keywords
+        articles = _fetch_marketaux(search=topic)
+        if len(articles) < MIN_ARTICLES:
+            # Silent fallback to Finnhub (unfiltered) — better than nothing
+            articles = _fetch_finnhub()
+
+        state["raw_data"] = {
+            "research": research,
+            "articles": articles,
+        }
 
     else:
         raise RuntimeError("Please select a topic mode.")
