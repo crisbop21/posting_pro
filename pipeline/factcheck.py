@@ -12,18 +12,35 @@ MAX_RETRIES = 2
 DELIMITER = "---CLEANED_DATA---"
 
 
+def _format_articles(articles: list[dict]) -> str:
+    """Format a list of article dicts into a text block."""
+    parts = []
+    for article in articles:
+        parts.append(
+            f"Title: {article.get('title', '')}\n"
+            f"Source: {article.get('source', '')}\n"
+            f"Published: {article.get('published_at', '')}\n"
+            f"Description: {article.get('description', '')}\n"
+        )
+    return "\n---\n".join(parts)
+
+
 def _build_input(raw_data) -> str:
-    """Convert raw_data (list of dicts or string) to a single text block."""
-    if isinstance(raw_data, list):
-        parts = []
-        for article in raw_data:
-            parts.append(
-                f"Title: {article.get('title', '')}\n"
-                f"Source: {article.get('source', '')}\n"
-                f"Published: {article.get('published_at', '')}\n"
-                f"Description: {article.get('description', '')}\n"
+    """Convert raw_data (list, string, or hybrid dict) to a single text block."""
+    if isinstance(raw_data, dict):
+        # Hybrid format: {"research": str, "articles": list}
+        sections = []
+        research = raw_data.get("research", "")
+        articles = raw_data.get("articles", [])
+        if research:
+            sections.append(f"=== RESEARCH BRIEFING ===\n{research}")
+        if articles:
+            sections.append(
+                f"=== NEWS ARTICLES ===\n{_format_articles(articles)}"
             )
-        return "\n---\n".join(parts)
+        return "\n\n".join(sections)
+    if isinstance(raw_data, list):
+        return _format_articles(raw_data)
     return str(raw_data)
 
 

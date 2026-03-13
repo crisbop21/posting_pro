@@ -111,7 +111,21 @@ with _col_demo1:
 if st.session_state.get("raw_data") is not None:
     raw = st.session_state["raw_data"]
     with st.expander("Preview gathered data", expanded=False):
-        if isinstance(raw, list):
+        if isinstance(raw, dict):
+            # Hybrid format: research + articles
+            research = raw.get("research", "")
+            articles = raw.get("articles", [])
+            if research:
+                st.subheader("Research Briefing")
+                st.write(research)
+            if articles:
+                st.subheader(f"Related News ({len(articles)} articles)")
+                for article in articles:
+                    st.markdown(f"**{article.get('title', 'Untitled')}**")
+                    st.caption(f"{article.get('source', '')} — {article.get('published_at', '')}")
+                    st.write(article.get("description", ""))
+                    st.divider()
+        elif isinstance(raw, list):
             for article in raw:
                 st.markdown(f"**{article.get('title', 'Untitled')}**")
                 st.caption(f"{article.get('source', '')} — {article.get('published_at', '')}")
@@ -203,6 +217,15 @@ if not st.session_state["step2_approved"]:
 else:
     step_card(3, "Write Script", "Generate a voiceover script from the cleaned data.")
 
+    # --- Creative direction (always visible before approval) ---
+    if not st.session_state["step3_approved"]:
+        st.session_state["script_direction"] = st.text_input(
+            "Creative direction (optional)",
+            value=st.session_state.get("script_direction", ""),
+            placeholder="e.g. Focus on retail investor impact, or take a contrarian angle",
+            key="input_script_direction",
+        )
+
     if st.session_state.get("script") is None:
         _col_run3, _col_demo3 = st.columns([1, 1])
         with _col_run3:
@@ -249,6 +272,44 @@ else:
             st.session_state["estimated_duration_s"] = round(
                 (st.session_state["word_count"] / 150) * 60
             )
+
+        # --- Feedback-based regeneration ---
+        if not st.session_state["step3_approved"]:
+            st.divider()
+            st.subheader("Regenerate with feedback")
+            feedback = st.text_area(
+                "What should change?",
+                value="",
+                placeholder="e.g. Too technical — simplify the middle section, or make the hook more dramatic",
+                key="input_script_feedback",
+                height=100,
+            )
+            if st.button("Regenerate Script", key="btn_regenerate_script"):
+                if not feedback.strip():
+                    st.warning("Please enter feedback before regenerating.")
+                else:
+                    st.session_state["script_feedback"] = feedback
+                    try:
+                        with st.spinner("Revising script based on feedback..."):
+                            from pipeline.script import run as script_run
+
+                            state = {k: st.session_state[k] for k in st.session_state}
+                            state = script_run(state)
+                            for k, v in state.items():
+                                if k in DEFAULT_STATE:
+                                    st.session_state[k] = v
+                        st.rerun()
+                    except Exception as e:
+                        msg = str(e).rstrip(". ")
+                        st.error(
+                            f"Could not regenerate the script: {msg}. "
+                            "Try again."
+                        )
+
+            # Show revision history count
+            history = st.session_state.get("script_history", [])
+            if history:
+                st.caption(f"Script version: {len(history) + 1} (revised {len(history)} time(s))")
 
         if st.session_state.get("step3_demo"):
             demo_badge(3)

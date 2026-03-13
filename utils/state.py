@@ -24,6 +24,9 @@ DEFAULT_STATE = {
     "script": None,               # final approved script string
     "word_count": 0,
     "estimated_duration_s": 0,
+    "script_direction": "",       # user's angle/focus instruction (pre-generation)
+    "script_feedback": "",        # user's feedback for regeneration
+    "script_history": [],         # list of previous script versions for context
 
     # Step 4 — Background generation
     "visual_style": None,         # "cinematic" | "clean" | "vintage" | "dynamic"
