@@ -330,14 +330,19 @@ if not st.session_state["step5_approved"]:
 else:
     step_card(6, "Assemble Video", "Generate voiceover and composite the final video.")
 
-    # Track assembly progress in session state
-    st.session_state.setdefault("assembly_running", False)
-    st.session_state.setdefault("assembly_error", None)
+    # Maximum time (seconds) before we consider assembly stuck
+    ASSEMBLY_TIMEOUT_S = 300  # 5 minutes
 
     if st.session_state.get("final_video_path") is None:
         if st.session_state["assembly_running"]:
             st.info("Assembling video... this may take a minute.")
-            progress = st.progress(0)
+
+            # Show elapsed time as progress feedback
+            started = st.session_state.get("assembly_started_at")
+            if started:
+                elapsed = time.time() - started
+                progress_frac = min(elapsed / ASSEMBLY_TIMEOUT_S, 0.99)
+                st.progress(progress_frac)
 
             # Poll for completion
             if st.session_state.get("assembly_done"):
@@ -351,6 +356,16 @@ else:
                     st.session_state["assembly_error"] = None
                 else:
                     st.rerun()
+            elif started and (time.time() - started) > ASSEMBLY_TIMEOUT_S:
+                # Timed out — stop polling and surface the error
+                st.session_state["assembly_running"] = False
+                st.session_state["assembly_done"] = True
+                st.session_state["assembly_error"] = None
+                st.error(
+                    "Video assembly timed out after 5 minutes. "
+                    "This may indicate a problem with the inputs. "
+                    "Click **Assemble Video** to try again."
+                )
             else:
                 time.sleep(2)
                 st.rerun()
@@ -359,6 +374,7 @@ else:
                 st.session_state["assembly_running"] = True
                 st.session_state["assembly_done"] = False
                 st.session_state["assembly_error"] = None
+                st.session_state["assembly_started_at"] = time.time()
 
                 def _assemble_in_background():
                     try:
