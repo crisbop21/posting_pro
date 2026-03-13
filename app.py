@@ -61,15 +61,21 @@ if mode == "custom_topic":
     )
 
 if st.button("Gather Data", key="btn_gather", type="primary"):
-    with st.spinner("Gathering data..."):
-        from pipeline.gather import run as gather_run
+    try:
+        with st.spinner("Gathering data..."):
+            from pipeline.gather import run as gather_run
 
-        state = {k: st.session_state[k] for k in st.session_state}
-        state = gather_run(state)
-        for k, v in state.items():
-            if k in DEFAULT_STATE:
-                st.session_state[k] = v
-    st.rerun()
+            state = {k: st.session_state[k] for k in st.session_state}
+            state = gather_run(state)
+            for k, v in state.items():
+                if k in DEFAULT_STATE:
+                    st.session_state[k] = v
+        st.rerun()
+    except Exception as e:
+        st.error(
+            f"Could not gather data: {e}. "
+            "Click **Gather Data** to try again."
+        )
 
 # Show gathered data preview
 if st.session_state.get("raw_data") is not None:
@@ -156,15 +162,21 @@ else:
 
     if st.session_state.get("script") is None:
         if st.button("Generate Script", key="btn_script", type="primary"):
-            with st.spinner("Writing script with Claude..."):
-                from pipeline.script import run as script_run
+            try:
+                with st.spinner("Writing script with Claude..."):
+                    from pipeline.script import run as script_run
 
-                state = {k: st.session_state[k] for k in st.session_state}
-                state = script_run(state)
-                for k, v in state.items():
-                    if k in DEFAULT_STATE:
-                        st.session_state[k] = v
-            st.rerun()
+                    state = {k: st.session_state[k] for k in st.session_state}
+                    state = script_run(state)
+                    for k, v in state.items():
+                        if k in DEFAULT_STATE:
+                            st.session_state[k] = v
+                st.rerun()
+            except Exception as e:
+                st.error(
+                    f"Could not generate the script: {e}. "
+                    "Click **Generate Script** to try again."
+                )
     else:
         # Word count display
         word_count_display(st.session_state["word_count"])
@@ -220,15 +232,21 @@ else:
     st.session_state["visual_style"] = selected_style
 
     if st.button("Generate Background", key="btn_background", type="primary"):
-        with st.spinner("Generating background image and rendering Ken Burns video..."):
-            from pipeline.background import run as background_run
+        try:
+            with st.spinner("Generating background image and rendering Ken Burns video..."):
+                from pipeline.background import run as background_run
 
-            state = {k: st.session_state[k] for k in st.session_state}
-            state = background_run(state)
-            for k, v in state.items():
-                if k in DEFAULT_STATE:
-                    st.session_state[k] = v
-        st.rerun()
+                state = {k: st.session_state[k] for k in st.session_state}
+                state = background_run(state)
+                for k, v in state.items():
+                    if k in DEFAULT_STATE:
+                        st.session_state[k] = v
+            st.rerun()
+        except Exception as e:
+            st.error(
+                f"Could not generate the background: {e}. "
+                "Click **Generate Background** to try again."
+            )
 
     # Preview
     bg_path = st.session_state.get("background_video_path")
@@ -251,15 +269,21 @@ else:
 
     if not st.session_state.get("overlay_sequence"):
         if st.button("Source Images", key="btn_images", type="primary"):
-            with st.spinner("Searching for images..."):
-                from pipeline.images import run as images_run
+            try:
+                with st.spinner("Searching for images..."):
+                    from pipeline.images import run as images_run
 
-                state = {k: st.session_state[k] for k in st.session_state}
-                state = images_run(state)
-                for k, v in state.items():
-                    if k in DEFAULT_STATE:
-                        st.session_state[k] = v
-            st.rerun()
+                    state = {k: st.session_state[k] for k in st.session_state}
+                    state = images_run(state)
+                    for k, v in state.items():
+                        if k in DEFAULT_STATE:
+                            st.session_state[k] = v
+                st.rerun()
+            except Exception as e:
+                st.error(
+                    f"Could not source images: {e}. "
+                    "Click **Source Images** to try again."
+                )
     else:
         overlays = st.session_state["overlay_sequence"]
         st.write(f"{len(overlays)} overlay image(s) sourced.")
