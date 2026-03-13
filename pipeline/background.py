@@ -1,5 +1,7 @@
 """Step 4: Ken Burns background generation via DALL-E."""
 
+import logging
+import shutil
 import time
 from pathlib import Path
 
@@ -9,6 +11,8 @@ import streamlit as st
 from utils.api_clients import openai_client
 from utils.styles import VISUAL_STYLES
 from utils.video_utils import render_ken_burns
+
+logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 2
 
@@ -26,6 +30,14 @@ def run(state: dict) -> dict:
     style_key = state.get("visual_style")
     if not style_key or style_key not in VISUAL_STYLES:
         st.error("Please select a visual style.")
+        st.stop()
+
+    # Pre-flight: check that ffmpeg is available
+    if not shutil.which("ffmpeg"):
+        st.error(
+            "FFmpeg is not installed on this system. "
+            "Please install it (e.g. `apt-get install ffmpeg`) and try again."
+        )
         st.stop()
 
     duration = state.get("estimated_duration_s", 60)
@@ -57,10 +69,11 @@ def run(state: dict) -> dict:
                 f.write(img_resp.content)
             break
 
-        except Exception:
+        except Exception as e:
+            logger.exception("DALL-E image generation failed (attempt %d)", attempt + 1)
             if attempt == MAX_RETRIES:
                 st.error(
-                    "Could not generate the background image. "
+                    f"Could not generate the background image: {e}. "
                     "Use the Retry button to try again."
                 )
                 st.stop()
@@ -80,10 +93,11 @@ def run(state: dict) -> dict:
             state["background_video_path"] = output_path
             return state
 
-        except Exception:
+        except Exception as e:
+            logger.exception("Ken Burns render failed (attempt %d)", attempt + 1)
             if attempt == MAX_RETRIES:
                 st.error(
-                    "Could not render the background video. "
+                    f"Could not render the background video: {e}. "
                     "Use the Retry button to try again."
                 )
                 st.stop()

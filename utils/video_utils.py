@@ -63,7 +63,10 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
         output_path,
     ]
 
-    subprocess.run(cmd, check=True, capture_output=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, timeout=300)
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace")[-500:]
+        raise RuntimeError(f"ffmpeg exited with code {result.returncode}: {stderr}")
     return output_path
 
 
