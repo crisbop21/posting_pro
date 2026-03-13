@@ -32,6 +32,52 @@ MAX_RETRIES = 2
 PEXELS_VIDEO_URL = "https://api.pexels.com/videos/search"
 
 
+def search_pexels_videos(query: str, per_page: int = 15) -> list[dict]:
+    """Search Pexels Videos API and return a list of video result dicts.
+
+    Uses the authenticated pexels session from api_clients.
+
+    Args:
+        query: Search keyword.
+        per_page: Number of results to fetch.
+
+    Returns:
+        List of dicts with keys: id, image (preview), duration, video_files.
+    """
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            resp = pexels.get(PEXELS_VIDEO_URL, params={
+                "query": query,
+                "per_page": per_page,
+            }, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            results = []
+            for video in data.get("videos", []):
+                # Find the best video file (>= 480p)
+                best_file = None
+                for vf in video.get("video_files", []):
+                    if vf.get("height", 0) >= 480 and vf.get("link"):
+                        best_file = vf
+                        break
+                if best_file:
+                    results.append({
+                        "id": video.get("id"),
+                        "image": video.get("image", ""),
+                        "duration": video.get("duration", 0),
+                        "width": best_file.get("width", 0),
+                        "height": best_file.get("height", 0),
+                        "video_url": best_file["link"],
+                    })
+            return results
+        except Exception as e:
+            logger.warning("Pexels video search failed (attempt %d): %s", attempt + 1, e)
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(f"Could not search Pexels for b-roll: {e}") from e
+            time.sleep(2 ** attempt)
+    return []
+
+
 def _recommend_mode(state: dict) -> dict:
     """Ask Claude to recommend the best background mode for this script.
 
@@ -163,48 +209,53 @@ def _fetch_stock_broll(state: dict) -> str:
     queries = rec.get("pexels_queries", ["finance technology"])
     duration = state.get("estimated_duration_s", 60)
 
-    # Add broad fallback queries in case Claude's specific ones return no results
-    fallback_queries = ["business technology", "city skyline timelapse", "abstract motion background"]
-    all_queries = list(queries) + [q for q in fallback_queries if q not in queries]
+    # Use user-selected B-Roll clip if available
+    video_url = state.get("broll_selected_url")
+    if video_url:
+        logger.info("Using user-selected B-Roll clip: %s", video_url[:80])
+    else:
+        # Add broad fallback queries in case Claude's specific ones return no results
+        fallback_queries = ["business technology", "city skyline timelapse", "abstract motion background"]
+        all_queries = list(queries) + [q for q in fallback_queries if q not in queries]
 
-    video_url = None
-    for query in all_queries:
-        try:
-            # Note: Pexels Videos API does not support 'orientation' param
-            # (only the Photos API does). Use per_page and pick the best file.
-            resp = pexels.get(PEXELS_VIDEO_URL, params={
-                "query": query,
-                "per_page": 15,
-            }, timeout=30)
-            resp.raise_for_status()
-            data = resp.json()
-            videos = data.get("videos", [])
-            logger.info("Pexels returned %d videos for query '%s'", len(videos), query)
+    if not video_url:
+        for query in all_queries:
+            try:
+                # Note: Pexels Videos API does not support 'orientation' param
+                # (only the Photos API does). Use per_page and pick the best file.
+                resp = pexels.get(PEXELS_VIDEO_URL, params={
+                    "query": query,
+                    "per_page": 15,
+                }, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+                videos = data.get("videos", [])
+                logger.info("Pexels returned %d videos for query '%s'", len(videos), query)
 
-            if videos:
-                # Pick the first video with a usable file (>= 480p)
-                for video in videos:
-                    for vf in video.get("video_files", []):
-                        height = vf.get("height", 0)
-                        width = vf.get("width", 0)
-                        if height >= 480 and vf.get("link"):
-                            video_url = vf["link"]
-                            logger.info(
-                                "Selected video file: %dx%d from video id %s",
-                                width, height, video.get("id"),
-                            )
+                if videos:
+                    # Pick the first video with a usable file (>= 480p)
+                    for video in videos:
+                        for vf in video.get("video_files", []):
+                            height = vf.get("height", 0)
+                            width = vf.get("width", 0)
+                            if height >= 480 and vf.get("link"):
+                                video_url = vf["link"]
+                                logger.info(
+                                    "Selected video file: %dx%d from video id %s",
+                                    width, height, video.get("id"),
+                                )
+                                break
+                        if video_url:
                             break
-                    if video_url:
-                        break
 
-            if video_url:
-                logger.info("Pexels video found for query '%s'", query)
-                break
-            else:
-                logger.warning("No suitable video files for query '%s'", query)
-        except Exception as e:
-            logger.warning("Pexels search failed for '%s': %s", query, e)
-            continue
+                if video_url:
+                    logger.info("Pexels video found for query '%s'", query)
+                    break
+                else:
+                    logger.warning("No suitable video files for query '%s'", query)
+            except Exception as e:
+                logger.warning("Pexels search failed for '%s': %s", query, e)
+                continue
 
     if not video_url:
         raise RuntimeError(
