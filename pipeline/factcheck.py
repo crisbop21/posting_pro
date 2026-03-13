@@ -4,6 +4,8 @@ import json
 import time
 from pathlib import Path
 
+import anthropic
+
 from utils.api_clients import claude
 
 MAX_RETRIES = 2
@@ -78,7 +80,7 @@ def run(state: dict) -> dict:
         try:
             response = claude.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=8000,
+                max_tokens=4000,
                 system=skill,
                 messages=[{"role": "user", "content": input_text}],
             )
@@ -88,6 +90,18 @@ def run(state: dict) -> dict:
             state["factcheck_flags"] = result.get("flags", [])
             state["cleaned_data"] = result.get("cleaned_data", "")
             return state
+
+        except anthropic.BadRequestError as e:
+            # Billing / credit errors should not be retried
+            if "credit" in str(e).lower() or "balance" in str(e).lower():
+                raise RuntimeError(
+                    f"Insufficient API credits: {e}"
+                ) from e
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(
+                    f"Fact-checking failed after {MAX_RETRIES + 1} attempts: {e}"
+                ) from e
+            time.sleep(2 ** attempt)
 
         except Exception as e:
             if attempt == MAX_RETRIES:
