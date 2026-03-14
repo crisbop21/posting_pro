@@ -213,7 +213,7 @@ def run(state: dict) -> dict:
     print(f"[ASSEMBLE] Compositing video to {output_path}...")
     for attempt in range(MAX_RETRIES + 1):
         try:
-            composite_video(
+            _result, diagnostics = composite_video(
                 background_path=background,
                 audio_path=audio_path,
                 overlay_sequence=overlay_sequence,
@@ -221,6 +221,7 @@ def run(state: dict) -> dict:
             )
             print(f"[ASSEMBLE] Video composited successfully: {output_path}")
             state["final_video_path"] = output_path
+            state["assembly_diagnostics"] = diagnostics
             return state
 
         except Exception as e:
