@@ -575,29 +575,34 @@ else:
     step_card(6, "Assemble Video", "Generate voiceover and composite the final video.")
 
     # Maximum time (seconds) before we consider assembly stuck
-    ASSEMBLY_TIMEOUT_S = 300  # 5 minutes
+    ASSEMBLY_TIMEOUT_S = 900  # 15 minutes — MoviePy composites frame-by-frame
 
     if st.session_state.get("final_video_path") is None:
         if st.session_state["assembly_running"]:
-            st.info("Assembling video... this may take a minute.")
-
             # Show elapsed time as progress feedback
             started = st.session_state.get("assembly_started_at")
             if started:
                 elapsed = time.time() - started
+                mins = int(elapsed) // 60
+                secs = int(elapsed) % 60
+                st.info(
+                    f"Assembling video... {mins}m {secs}s elapsed. "
+                    f"MoviePy composites frame-by-frame — this can take several minutes."
+                )
                 progress_frac = min(elapsed / ASSEMBLY_TIMEOUT_S, 0.99)
                 st.progress(progress_frac)
+            else:
+                st.info("Assembling video...")
 
             # Poll for completion via the shared result dict (thread-safe)
             _result = st.session_state.get("_assembly_result", {})
             if _result.get("done"):
                 st.session_state["assembly_running"] = False
                 if _result.get("error"):
-                    err_msg = _result["error"].rstrip(". ")
-                    st.error(
-                        f"{err_msg}. "
-                        "Click **Assemble Video** to try again."
-                    )
+                    err_msg = _result["error"]
+                    st.error("Assembly failed. Click **Assemble Video** to try again.")
+                    with st.expander("Error details", expanded=True):
+                        st.code(err_msg, language="text")
                 elif _result.get("state"):
                     # Copy results from the thread's snapshot back into session state
                     for k, v in _result["state"].items():
@@ -615,7 +620,7 @@ else:
                     st.session_state.get("assembly_gen_id", 0) + 1
                 )
                 st.error(
-                    "Video assembly timed out after 5 minutes. "
+                    "Video assembly timed out after 15 minutes. "
                     "This may indicate a problem with the inputs. "
                     "Click **Assemble Video** to try again."
                 )
@@ -646,6 +651,7 @@ else:
                     _result = {"done": False, "error": None, "state": None}
 
                     def _assemble_in_background(_snapshot=state_snapshot, _res=_result):
+                        import traceback as _tb
                         try:
                             from pipeline.assemble import run as assemble_run
 
@@ -654,10 +660,16 @@ else:
                             print(f"[ASSEMBLE-THREAD] Done. final_video_path={updated.get('final_video_path')}")
                             _res["state"] = updated
                         except Exception as e:
+                            full_tb = _tb.format_exc()
                             print(f"[ASSEMBLE-THREAD] ERROR: {e}")
-                            _res["error"] = str(e)
+                            print(f"[ASSEMBLE-THREAD] TRACEBACK:\n{full_tb}")
+                            _res["error"] = f"{e}\n\nTraceback:\n{full_tb}"
                         finally:
                             _res["done"] = True
+                            print(f"[ASSEMBLE-THREAD] Thread finished. "
+                                  f"done={_res['done']}, "
+                                  f"error={'YES' if _res['error'] else 'no'}, "
+                                  f"has_state={'YES' if _res.get('state') else 'no'}")
 
                     thread = threading.Thread(target=_assemble_in_background, daemon=True)
                     # Stash result dict in session state so the polling loop can read it
