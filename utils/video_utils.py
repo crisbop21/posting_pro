@@ -1,4 +1,4 @@
-"""Ken Burns renderer, color grading, cropping, and FFmpeg video compositor."""
+"""Ken Burns renderer, color grading, cropping, and MoviePy video compositor."""
 
 import json
 import random
@@ -7,6 +7,14 @@ import tempfile
 from pathlib import Path
 
 import logging
+
+from moviepy import (
+    AudioFileClip,
+    CompositeVideoClip,
+    ImageClip,
+    VideoFileClip,
+    vfx,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -344,61 +352,14 @@ def render_green_screen(output_path: str, duration_s: float,
     return output_path
 
 
-def _probe_media(file_path: str) -> dict:
-    """Probe a media file for duration, dimensions, and format using ffprobe.
-
-    Returns a dict with keys: duration_s, width, height, codec, pix_fmt.
-    Missing fields are set to None.
-    """
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_format", "-show_streams", file_path],
-            capture_output=True, timeout=10,
-        )
-        if result.returncode != 0:
-            return {"error": f"ffprobe exit code {result.returncode}"}
-
-        data = json.loads(result.stdout)
-
-        duration = None
-        fmt = data.get("format", {})
-        if fmt.get("duration"):
-            duration = float(fmt["duration"])
-
-        video_stream = next(
-            (s for s in data.get("streams", [])
-             if s.get("codec_type") == "video"), None
-        )
-        if video_stream:
-            return {
-                "duration_s": duration,
-                "width": int(video_stream.get("width", 0)) or None,
-                "height": int(video_stream.get("height", 0)) or None,
-                "codec": video_stream.get("codec_name"),
-                "pix_fmt": video_stream.get("pix_fmt"),
-            }
-
-        # Audio-only file
-        audio_stream = next(
-            (s for s in data.get("streams", [])
-             if s.get("codec_type") == "audio"), None
-        )
-        return {
-            "duration_s": duration,
-            "width": None,
-            "height": None,
-            "codec": audio_stream.get("codec_name") if audio_stream else None,
-            "pix_fmt": None,
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-
 def composite_video(background_path: str, audio_path: str,
                     overlay_sequence: list[dict], output_path: str,
                     darken: bool = True) -> str:
-    """Composite overlays and audio onto the background video.
+    """Composite overlays and audio onto the background video using MoviePy.
+
+    Each overlay is an independent ImageClip layer with its own start time,
+    duration, position, and fade effects.  MoviePy composites all layers
+    in Python then encodes once via FFmpeg — no fragile filter chains.
 
     Args:
         background_path: Path to the Ken Burns background video.
@@ -414,11 +375,9 @@ def composite_video(background_path: str, audio_path: str,
         Tuple of (output_path, diagnostics_dict).
     """
     # ------------------------------------------------------------------
-    # Pre-flight: probe all inputs and collect diagnostics
+    # Validate inputs
     # ------------------------------------------------------------------
     warnings = []
-
-    # Validate inputs exist
     for label, fpath in [("Background video", background_path),
                          ("Audio file", audio_path)]:
         if not Path(fpath).exists():
@@ -427,205 +386,130 @@ def composite_video(background_path: str, audio_path: str,
         if not Path(ov["image_path"]).exists():
             raise RuntimeError(f"Overlay image {i + 1} not found: {ov['image_path']}")
 
-    # Probe background video
-    bg_info = _probe_media(background_path)
-    if bg_info.get("error"):
-        warnings.append(f"Could not probe background: {bg_info['error']}")
-    bg_duration = bg_info.get("duration_s")
+    # ------------------------------------------------------------------
+    # Build MoviePy clip layers
+    # ------------------------------------------------------------------
+    bg_clip = VideoFileClip(background_path)
+    audio_clip = AudioFileClip(audio_path)
 
-    # Probe audio
-    audio_info = _probe_media(audio_path)
-    if audio_info.get("error"):
-        warnings.append(f"Could not probe audio: {audio_info['error']}")
-    audio_duration = audio_info.get("duration_s")
+    # Use audio duration as the master clock
+    master_duration = audio_clip.duration
+    bg_duration = bg_clip.duration
 
-    # Probe each overlay image
-    overlay_probes = []
+    if bg_duration < master_duration:
+        # Loop background to cover full audio duration
+        n_loops = int(master_duration / bg_duration) + 1
+        from moviepy import concatenate_videoclips
+        bg_clip = concatenate_videoclips([bg_clip] * n_loops)
+    bg_clip = bg_clip.subclipped(0, master_duration)
+
+    # Darken background for foreground/background separation
+    if darken:
+        bg_clip = bg_clip.with_effects([
+            vfx.MultiplyColor(0.85),
+        ])
+
+    clips = [bg_clip]
+
+    # Vertical centre of the safe zone (above the 200 px caption area)
+    safe_zone_centre_y = (CANVAS_HEIGHT - CAPTION_ZONE) // 2
+
+    overlay_details = []
     for i, ov in enumerate(overlay_sequence):
-        probe = _probe_media(ov["image_path"])
-        probe["index"] = i + 1
-        probe["file"] = Path(ov["image_path"]).name
-        overlay_probes.append(probe)
-        if probe.get("error"):
-            warnings.append(f"Overlay #{i+1} probe failed: {probe['error']}")
+        start = ov["start_s"]
+        duration = ov["duration_s"]
+
+        # Clamp overlay to not exceed master duration
+        if start + duration > master_duration:
+            duration = max(0, master_duration - start)
+            warnings.append(
+                f"Overlay #{i+1} clamped to {duration:.1f}s "
+                f"(would exceed audio duration)"
+            )
+        if duration <= 0:
+            warnings.append(f"Overlay #{i+1} skipped — starts after audio ends")
+            continue
+
+        img_clip = (
+            ImageClip(ov["image_path"])
+            .with_start(start)
+            .with_duration(duration)
+            .with_position(("center", safe_zone_centre_y))
+            .with_effects([
+                vfx.CrossFadeIn(FADE_IN_S),
+                vfx.CrossFadeOut(FADE_OUT_S),
+            ])
+        )
+        clips.append(img_clip)
+
+        overlay_details.append({
+            "index": i + 1,
+            "image": Path(ov["image_path"]).name,
+            "start_s": start,
+            "end_s": round(start + duration, 2),
+            "duration_s": round(duration, 2),
+            "status": "composited",
+        })
 
     # Timing sanity checks
-    if overlay_sequence:
-        last_end = overlay_sequence[-1]["start_s"] + overlay_sequence[-1]["duration_s"]
-        if bg_duration and last_end > bg_duration + 1:
+    for i in range(1, len(overlay_sequence)):
+        prev_end = overlay_sequence[i-1]["start_s"] + overlay_sequence[i-1]["duration_s"]
+        curr_start = overlay_sequence[i]["start_s"]
+        if curr_start < prev_end:
             warnings.append(
-                f"Last overlay ends at {last_end:.1f}s but background is "
-                f"only {bg_duration:.1f}s — overlays may be cut short"
+                f"Overlays #{i} and #{i+1} overlap: "
+                f"#{i} ends at {prev_end:.2f}s, #{i+1} starts at {curr_start:.2f}s"
             )
-        if audio_duration and last_end > audio_duration + 1:
-            warnings.append(
-                f"Last overlay ends at {last_end:.1f}s but audio is "
-                f"only {audio_duration:.1f}s — video will end with audio"
-            )
-        for i in range(1, len(overlay_sequence)):
-            prev_end = (overlay_sequence[i-1]["start_s"]
-                        + overlay_sequence[i-1]["duration_s"])
-            curr_start = overlay_sequence[i]["start_s"]
-            if curr_start < prev_end:
-                warnings.append(
-                    f"Overlays #{i} and #{i+1} overlap: "
-                    f"#{i} ends at {prev_end:.2f}s, "
-                    f"#{i+1} starts at {curr_start:.2f}s"
-                )
 
     # ------------------------------------------------------------------
-    # Build the FFmpeg filter complex
+    # Composite and render
     # ------------------------------------------------------------------
-    inputs = ["-i", background_path, "-i", audio_path]
-    filter_parts = []
+    final = CompositeVideoClip(clips, size=(CANVAS_WIDTH, CANVAS_HEIGHT))
+    final = final.with_audio(audio_clip)
+    final = final.subclipped(0, master_duration)
 
-    # Darken the background so foreground overlays pop visually
-    if darken:
-        filter_parts.append("[0:v]eq=brightness=-0.15:saturation=0.85[bg]")
-        prev_label = "bg"
-    else:
-        prev_label = "0:v"
+    logger.info(
+        "MoviePy compositing %d overlays (%.1fs), output=%s",
+        len(overlay_sequence), master_duration, output_path,
+    )
 
-    for i, overlay in enumerate(overlay_sequence):
-        start = overlay["start_s"]
-        duration = overlay["duration_s"]
-        end = start + duration
-
-        # Loop the still image so FFmpeg generates frames with proper
-        # timestamps — without this the image is a single frame at t=0
-        # and the fade filter never triggers for later overlays.
-        inputs.extend(["-loop", "1", "-t", str(end), "-i", overlay["image_path"]])
-        input_idx = i + 2  # 0=bg, 1=audio, 2+=overlays
-
-        # Position overlay centred horizontally, above the caption zone
-        y_pos = (CANVAS_HEIGHT - CAPTION_ZONE) // 2
-        x_pos = f"(W-w)/2"
-
-        # Fade in/out using absolute timestamps — the looped image stream
-        # now has frames from t=0 to t=end so these times are reachable.
-        fade_filter = (
-            f"[{input_idx}:v]format=rgba,"
-            f"fade=t=in:st={start}:d={FADE_IN_S}:alpha=1,"
-            f"fade=t=out:st={end - FADE_OUT_S}:d={FADE_OUT_S}:alpha=1"
-            f"[ov{i}]"
-        )
-        filter_parts.append(fade_filter)
-
-        # eof_action=pass: when the overlay image stream reaches EOF,
-        # keep passing the main input through instead of stopping the
-        # entire filter chain. Without this, only the first overlay
-        # renders because its stream EOF kills downstream outputs.
-        overlay_filter = (
-            f"[{prev_label}][ov{i}]overlay={x_pos}:y={y_pos}:"
-            f"enable='between(t,{start},{end})':"
-            f"eof_action=pass[tmp{i}]"
-        )
-        filter_parts.append(overlay_filter)
-        prev_label = f"tmp{i}"
-
-    filter_complex = ";".join(filter_parts)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-threads", "0",
-        *inputs,
-    ]
-
-    if filter_complex:
-        cmd.extend(["-filter_complex", filter_complex,
-                     "-map", f"[{prev_label}]"])
-    else:
-        # No overlays — apply darkening as a simple video filter if enabled
-        if darken:
-            cmd.extend(["-vf", "eq=brightness=-0.15:saturation=0.85"])
-        cmd.extend(["-map", "0:v"])
-
-    cmd.extend([
-        "-map", "1:a",
-        "-c:v", CODEC,
-        "-preset", "veryfast",
-        "-crf", CRF,
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-pix_fmt", "yuv420p",
-        "-movflags", "faststart",
-        "-shortest",
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    final.write_videofile(
         output_path,
-    ])
+        codec=CODEC,
+        audio_codec="aac",
+        audio_bitrate="192k",
+        fps=30,
+        preset="veryfast",
+        ffmpeg_params=["-crf", CRF, "-pix_fmt", "yuv420p",
+                       "-movflags", "faststart"],
+        logger=None,
+    )
+
+    # Clean up MoviePy resources
+    final.close()
+    bg_clip.close()
+    audio_clip.close()
 
     # ------------------------------------------------------------------
-    # Build diagnostics dict for UI debugging
+    # Diagnostics
     # ------------------------------------------------------------------
     diagnostics = {
+        "engine": "moviepy",
         "overlay_count": len(overlay_sequence),
-        "filter_complex": filter_complex if filter_complex else "(none)",
         "background": {
             "file": Path(background_path).name,
-            "duration_s": bg_duration,
-            "width": bg_info.get("width"),
-            "height": bg_info.get("height"),
-            "pix_fmt": bg_info.get("pix_fmt"),
+            "duration_s": round(bg_duration, 2),
         },
         "audio": {
             "file": Path(audio_path).name,
-            "duration_s": audio_duration,
-            "codec": audio_info.get("codec"),
+            "duration_s": round(master_duration, 2),
         },
-        "overlay_timings": [
-            {
-                "index": i + 1,
-                "image": Path(ov["image_path"]).name,
-                "start_s": ov["start_s"],
-                "end_s": round(ov["start_s"] + ov["duration_s"], 2),
-                "duration_s": ov["duration_s"],
-                "loop_end_s": round(ov["start_s"] + ov["duration_s"], 2),
-                "dimensions": (
-                    f"{overlay_probes[i].get('width')}x"
-                    f"{overlay_probes[i].get('height')}"
-                    if i < len(overlay_probes)
-                       and overlay_probes[i].get("width")
-                    else "unknown"
-                ),
-            }
-            for i, ov in enumerate(overlay_sequence)
-        ],
+        "overlay_timings": overlay_details,
+        "darken": darken,
         "warnings": warnings,
-        "cmd": " ".join(cmd),
-        "ffmpeg_stderr": "",
-        "success": False,
+        "success": True,
     }
-
-    # ------------------------------------------------------------------
-    # Run FFmpeg
-    # ------------------------------------------------------------------
-    logger.info("Compositing %d overlays, output=%s", len(overlay_sequence), output_path)
-    result = subprocess.run(cmd, capture_output=True, timeout=240)
-    stderr_text = result.stderr.decode(errors="replace")
-    diagnostics["ffmpeg_stderr"] = stderr_text[-3000:]
-    diagnostics["success"] = result.returncode == 0
-
-    # Parse stderr for common warning patterns
-    stderr_lower = stderr_text.lower()
-    if "discarding" in stderr_lower:
-        warnings.append("FFmpeg discarded frames — possible stream sync issue")
-    if "discarding initial" in stderr_lower:
-        warnings.append("FFmpeg discarded initial timestamps — may affect overlay timing")
-    if "discarding damaged" in stderr_lower:
-        warnings.append("FFmpeg discarded damaged frames — possible corrupt input")
-    if "error" in stderr_lower and result.returncode == 0:
-        # FFmpeg succeeded but logged errors
-        warnings.append("FFmpeg logged errors despite success — check stderr output")
-    if "discarding" not in stderr_lower and "past duration" in stderr_lower:
-        warnings.append("Frames past declared duration — input may be longer than expected")
-
-    diagnostics["warnings"] = warnings
-
-    if result.returncode != 0:
-        diagnostics["success"] = False
-        raise RuntimeError(
-            f"ffmpeg exited with code {result.returncode}: "
-            f"{diagnostics['ffmpeg_stderr'][-500:]}"
-        )
 
     return output_path, diagnostics
 
