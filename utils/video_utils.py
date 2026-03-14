@@ -345,7 +345,8 @@ def render_green_screen(output_path: str, duration_s: float,
 
 
 def composite_video(background_path: str, audio_path: str,
-                    overlay_sequence: list[dict], output_path: str) -> str:
+                    overlay_sequence: list[dict], output_path: str,
+                    darken: bool = True) -> str:
     """Composite overlays and audio onto the background video.
 
     Args:
@@ -356,6 +357,7 @@ def composite_video(background_path: str, audio_path: str,
             - start_s: start time in seconds
             - duration_s: how long the overlay is shown
         output_path: Path for the final output MP4.
+        darken: Whether to dim the background for foreground separation.
 
     Returns:
         Path to the composited video file.
@@ -372,7 +374,13 @@ def composite_video(background_path: str, audio_path: str,
     # Build the FFmpeg filter complex for overlays
     inputs = ["-i", background_path, "-i", audio_path]
     filter_parts = []
-    prev_label = "0:v"
+
+    # Darken the background so foreground overlays pop visually
+    if darken:
+        filter_parts.append("[0:v]eq=brightness=-0.15:saturation=0.85[bg]")
+        prev_label = "bg"
+    else:
+        prev_label = "0:v"
 
     for i, overlay in enumerate(overlay_sequence):
         start = overlay["start_s"]
@@ -418,7 +426,9 @@ def composite_video(background_path: str, audio_path: str,
         cmd.extend(["-filter_complex", filter_complex,
                      "-map", f"[{prev_label}]"])
     else:
-        # No overlays — pass background video through directly
+        # No overlays — apply darkening as a simple video filter if enabled
+        if darken:
+            cmd.extend(["-vf", "eq=brightness=-0.15:saturation=0.85"])
         cmd.extend(["-map", "0:v"])
 
     cmd.extend([

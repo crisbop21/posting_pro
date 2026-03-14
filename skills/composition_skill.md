@@ -13,6 +13,13 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - The Ken Burns loop (slow pan-and-zoom on a DALL-E generated image) must match or exceed the total audio duration.
 - If the background is shorter than the audio, loop it seamlessly.
 
+## Background treatment
+
+- The background video is **darkened** before any overlays are composited on top.
+- Brightness is reduced by 15% (`eq=brightness=-0.15`) and saturation by 15% (`saturation=0.85`).
+- This creates clear depth separation between the background layer and foreground overlays.
+- Darkening is applied even when there are no image overlays, to maintain consistent visual tone.
+
 ## Overlay images
 
 - **Maximum width**: 85% of canvas width = **918 px**. Scale down proportionally if wider.
