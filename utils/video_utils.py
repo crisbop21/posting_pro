@@ -377,7 +377,14 @@ def composite_video(background_path: str, audio_path: str,
     # ------------------------------------------------------------------
     # Validate inputs
     # ------------------------------------------------------------------
+    import traceback as _tb
     warnings = []
+    print("[COMPOSITE] === Starting composite_video ===")
+    print(f"[COMPOSITE] background={background_path}")
+    print(f"[COMPOSITE] audio={audio_path}")
+    print(f"[COMPOSITE] overlays={len(overlay_sequence)}, darken={darken}")
+    print(f"[COMPOSITE] output={output_path}")
+
     for label, fpath in [("Background video", background_path),
                          ("Audio file", audio_path)]:
         if not Path(fpath).exists():
@@ -385,29 +392,47 @@ def composite_video(background_path: str, audio_path: str,
     for i, ov in enumerate(overlay_sequence):
         if not Path(ov["image_path"]).exists():
             raise RuntimeError(f"Overlay image {i + 1} not found: {ov['image_path']}")
+    print("[COMPOSITE] All input files validated OK")
 
     # ------------------------------------------------------------------
     # Build MoviePy clip layers
     # ------------------------------------------------------------------
-    bg_clip = VideoFileClip(background_path)
-    audio_clip = AudioFileClip(audio_path)
+    try:
+        print("[COMPOSITE] Loading background video...")
+        bg_clip = VideoFileClip(background_path)
+        print(f"[COMPOSITE] Background loaded: {bg_clip.duration:.1f}s, "
+              f"{bg_clip.size}")
+
+        print("[COMPOSITE] Loading audio...")
+        audio_clip = AudioFileClip(audio_path)
+        print(f"[COMPOSITE] Audio loaded: {audio_clip.duration:.1f}s")
+    except Exception as e:
+        print(f"[COMPOSITE] FAILED loading inputs: {e}")
+        print(_tb.format_exc())
+        raise
 
     # Use audio duration as the master clock
     master_duration = audio_clip.duration
     bg_duration = bg_clip.duration
 
-    if bg_duration < master_duration:
-        # Loop background to cover full audio duration
-        n_loops = int(master_duration / bg_duration) + 1
-        from moviepy import concatenate_videoclips
-        bg_clip = concatenate_videoclips([bg_clip] * n_loops)
-    bg_clip = bg_clip.subclipped(0, master_duration)
+    try:
+        if bg_duration < master_duration:
+            n_loops = int(master_duration / bg_duration) + 1
+            print(f"[COMPOSITE] Looping background {n_loops}x to cover "
+                  f"{master_duration:.1f}s")
+            from moviepy import concatenate_videoclips
+            bg_clip = concatenate_videoclips([bg_clip] * n_loops)
+        bg_clip = bg_clip.subclipped(0, master_duration)
+        print(f"[COMPOSITE] Background trimmed to {master_duration:.1f}s")
 
-    # Darken background for foreground/background separation
-    if darken:
-        bg_clip = bg_clip.with_effects([
-            vfx.MultiplyColor(0.85),
-        ])
+        if darken:
+            print("[COMPOSITE] Applying darken (MultiplyColor 0.85)...")
+            bg_clip = bg_clip.with_effects([vfx.MultiplyColor(0.85)])
+            print("[COMPOSITE] Darken applied")
+    except Exception as e:
+        print(f"[COMPOSITE] FAILED preparing background: {e}")
+        print(_tb.format_exc())
+        raise
 
     clips = [bg_clip]
 
@@ -430,17 +455,27 @@ def composite_video(background_path: str, audio_path: str,
             warnings.append(f"Overlay #{i+1} skipped — starts after audio ends")
             continue
 
-        img_clip = (
-            ImageClip(ov["image_path"])
-            .with_start(start)
-            .with_duration(duration)
-            .with_position(("center", safe_zone_centre_y))
-            .with_effects([
-                vfx.CrossFadeIn(FADE_IN_S),
-                vfx.CrossFadeOut(FADE_OUT_S),
-            ])
-        )
-        clips.append(img_clip)
+        try:
+            print(f"[COMPOSITE] Building overlay #{i+1}: "
+                  f"{Path(ov['image_path']).name}, "
+                  f"start={start:.1f}s, dur={duration:.1f}s")
+            img_clip = (
+                ImageClip(ov["image_path"])
+                .with_start(start)
+                .with_duration(duration)
+                .with_position(("center", safe_zone_centre_y))
+                .with_effects([
+                    vfx.CrossFadeIn(FADE_IN_S),
+                    vfx.CrossFadeOut(FADE_OUT_S),
+                ])
+            )
+            clips.append(img_clip)
+            print(f"[COMPOSITE] Overlay #{i+1} added OK")
+        except Exception as e:
+            print(f"[COMPOSITE] FAILED building overlay #{i+1}: {e}")
+            print(_tb.format_exc())
+            warnings.append(f"Overlay #{i+1} failed to load: {e}")
+            continue
 
         overlay_details.append({
             "index": i + 1,
@@ -464,9 +499,17 @@ def composite_video(background_path: str, audio_path: str,
     # ------------------------------------------------------------------
     # Composite and render
     # ------------------------------------------------------------------
-    final = CompositeVideoClip(clips, size=(CANVAS_WIDTH, CANVAS_HEIGHT))
-    final = final.with_audio(audio_clip)
-    final = final.subclipped(0, master_duration)
+    print(f"[COMPOSITE] Creating CompositeVideoClip with {len(clips)} layers...")
+    try:
+        final = CompositeVideoClip(clips, size=(CANVAS_WIDTH, CANVAS_HEIGHT))
+        final = final.with_audio(audio_clip)
+        final = final.subclipped(0, master_duration)
+        print(f"[COMPOSITE] CompositeVideoClip built: "
+              f"{final.duration:.1f}s, {final.size}")
+    except Exception as e:
+        print(f"[COMPOSITE] FAILED building composite: {e}")
+        print(_tb.format_exc())
+        raise
 
     logger.info(
         "MoviePy compositing %d overlays (%.1fs), output=%s",
@@ -474,23 +517,35 @@ def composite_video(background_path: str, audio_path: str,
     )
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    final.write_videofile(
-        output_path,
-        codec=CODEC,
-        audio_codec="aac",
-        audio_bitrate="192k",
-        fps=30,
-        threads=4,
-        preset="ultrafast",
-        ffmpeg_params=["-crf", CRF, "-pix_fmt", "yuv420p",
-                       "-movflags", "faststart"],
-        logger=None,
-    )
+    print(f"[COMPOSITE] Starting write_videofile to {output_path}...")
+    try:
+        final.write_videofile(
+            output_path,
+            codec=CODEC,
+            audio_codec="aac",
+            audio_bitrate="192k",
+            fps=30,
+            threads=4,
+            preset="ultrafast",
+            ffmpeg_params=["-crf", CRF, "-pix_fmt", "yuv420p",
+                           "-movflags", "faststart"],
+            logger=None,
+        )
+        print(f"[COMPOSITE] write_videofile completed OK")
+    except Exception as e:
+        print(f"[COMPOSITE] FAILED write_videofile: {e}")
+        print(_tb.format_exc())
+        raise
+    finally:
+        # Clean up MoviePy resources
+        print("[COMPOSITE] Closing MoviePy clips...")
+        final.close()
+        bg_clip.close()
+        audio_clip.close()
 
-    # Clean up MoviePy resources
-    final.close()
-    bg_clip.close()
-    audio_clip.close()
+    output_size = Path(output_path).stat().st_size / (1024 * 1024)
+    print(f"[COMPOSITE] Output file: {output_size:.1f} MB")
+    print("[COMPOSITE] === composite_video complete ===")
 
     # ------------------------------------------------------------------
     # Diagnostics
