@@ -686,7 +686,11 @@ else:
                     st.warning(w)
 
             with st.expander("Assembly Diagnostics", expanded=bool(diag_warnings)):
-                st.markdown(f"**Status:** {'Success' if diag.get('success') else 'Failed'}")
+                engine = diag.get("engine", "ffmpeg")
+                st.markdown(
+                    f"**Status:** {'Success' if diag.get('success') else 'Failed'} "
+                    f"| **Engine:** {engine}"
+                )
 
                 # Input info
                 bg = diag.get("background", {})
@@ -694,15 +698,13 @@ else:
                 st.markdown("**Inputs:**")
                 st.text(
                     f"  Background: {bg.get('file', '?')}  "
-                    f"{bg.get('width', '?')}x{bg.get('height', '?')}  "
-                    f"{bg.get('duration_s', '?')}s  "
-                    f"fmt={bg.get('pix_fmt', '?')}"
+                    f"{bg.get('duration_s', '?')}s"
                 )
                 st.text(
                     f"  Audio:      {aud.get('file', '?')}  "
-                    f"{aud.get('duration_s', '?')}s  "
-                    f"codec={aud.get('codec', '?')}"
+                    f"{aud.get('duration_s', '?')}s"
                 )
+                st.text(f"  Darken:     {diag.get('darken', '?')}")
 
                 # Overlay timing table
                 timings = diag.get("overlay_timings", [])
@@ -713,28 +715,12 @@ else:
                     timing_source = "beat map" if st.session_state.get("beat_map") else "even distribution"
                     st.caption(f"Source: {timing_source}")
                     for t in timings:
+                        status = t.get("status", "")
                         st.text(
                             f"  #{t['index']}  {t['image']:<30s}  "
                             f"{t['start_s']:>6.2f}s – {t['end_s']:>6.2f}s  "
-                            f"({t['duration_s']:.1f}s)  "
-                            f"{t.get('dimensions', '')}"
+                            f"({t['duration_s']:.1f}s)  {status}"
                         )
-
-                # Filter complex
-                st.markdown("**FFmpeg filter complex:**")
-                fc = diag.get("filter_complex", "")
-                # Pretty-print: one filter per line
-                st.code(fc.replace(";", ";\n"), language="text")
-
-                # FFmpeg stderr
-                stderr = diag.get("ffmpeg_stderr", "")
-                if stderr:
-                    st.markdown("**FFmpeg output (last 3000 chars):**")
-                    st.code(stderr, language="text")
-
-                # Full command
-                st.markdown("**Full command:**")
-                st.code(diag.get("cmd", ""), language="bash")
 
         if st.session_state.get("step6_demo"):
             demo_badge(6)
