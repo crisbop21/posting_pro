@@ -1,6 +1,7 @@
 """Step 6: Video assembly — voiceover + background + overlays."""
 
 import concurrent.futures
+import logging
 import re
 import time
 from datetime import datetime
@@ -8,6 +9,8 @@ from pathlib import Path
 
 from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
 from utils.video_utils import composite_video, generate_slug, CANVAS_HEIGHT, CAPTION_ZONE
+
+logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 1
 VOICEOVER_TIMEOUT_S = 90  # max seconds to wait for ElevenLabs
@@ -56,6 +59,49 @@ def _generate_voiceover(script: str) -> str:
             time.sleep(2 ** attempt)
 
     return audio_path
+
+
+def _get_audio_duration(audio_path: str) -> float | None:
+    """Probe the duration of an audio file using ffprobe.
+
+    Returns duration in seconds, or None if probing fails.
+    """
+    import json
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json",
+             "-show_format", audio_path],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode == 0:
+            info = json.loads(result.stdout)
+            return float(info["format"]["duration"])
+    except Exception as e:
+        logger.warning("ffprobe failed for %s: %s", audio_path, e)
+    return None
+
+
+def _beat_map_to_timings(beat_map: list[dict], total_duration_s: float,
+                         min_s: float = 4.0, max_s: float = 18.0) -> list[dict]:
+    """Convert percentage-based beat map to absolute second timings.
+
+    Clamps each overlay duration to the composition skill's 4–18s range.
+    """
+    timings = []
+    for entry in beat_map:
+        start = entry["start_pct"] * total_duration_s
+        duration = entry["duration_pct"] * total_duration_s
+        duration = max(min_s, min(max_s, duration))
+        # Ensure overlay doesn't run past the end of the video
+        if start + duration > total_duration_s:
+            duration = max(min_s, total_duration_s - start)
+        timings.append({
+            "start_s": round(start, 2),
+            "duration_s": round(duration, 2),
+        })
+    return timings
 
 
 def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list[dict]:
@@ -126,9 +172,25 @@ def run(state: dict) -> dict:
     audio_path = _generate_voiceover(script)
     print(f"[ASSEMBLE] Voiceover saved to {audio_path}")
 
-    # Compute overlay timing
-    timings = _compute_overlay_timing(len(overlays), duration)
-    print(f"[ASSEMBLE] Overlay timings computed: {len(timings)} entries")
+    # Use actual audio duration when available, fall back to estimate
+    actual_duration = _get_audio_duration(audio_path)
+    if actual_duration:
+        print(f"[ASSEMBLE] Actual audio duration: {actual_duration:.1f}s "
+              f"(estimated: {duration}s)")
+        duration = actual_duration
+
+    # Use beat map for overlay timing if available, otherwise even distribution
+    beat_map = state.get("beat_map")
+    if beat_map and len(beat_map) == len(overlays):
+        timings = _beat_map_to_timings(beat_map, duration)
+        print(f"[ASSEMBLE] Using beat map timing: {len(timings)} entries")
+    else:
+        timings = _compute_overlay_timing(len(overlays), duration)
+        if beat_map:
+            print(f"[ASSEMBLE] Beat map count mismatch "
+                  f"({len(beat_map)} vs {len(overlays)} overlays), "
+                  f"using even distribution")
+        print(f"[ASSEMBLE] Overlay timings computed: {len(timings)} entries")
 
     # Build overlay sequence with timing and paths
     overlay_sequence = []

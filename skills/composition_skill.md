@@ -31,6 +31,8 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 
 ## Overlay timing
 
+- **Beat map**: When available, overlay timing is driven by a beat map generated alongside the script. The beat map uses percentage-based positions (0.0–1.0 of total duration) that are converted to absolute seconds at assembly time using the actual audio duration.
+- **Fallback**: When no beat map is available, overlays are distributed evenly across the video duration.
 - **Fade in**: 0.4 seconds (linear alpha ramp from 0 to 1).
 - **Fade out**: 0.3 seconds (linear alpha ramp from 1 to 0).
 - **Minimum on-screen duration**: 4 seconds (including fades).
