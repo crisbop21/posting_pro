@@ -43,6 +43,9 @@ DEFAULT_STATE = {
     # Step 6 — Video assembly
     "final_video_path": None,
 
+    # Assembly diagnostics (populated after video render)
+    "assembly_diagnostics": None,
+
     # Assembly thread tracking
     "assembly_running": False,
     "assembly_done": False,

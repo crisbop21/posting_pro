@@ -375,18 +375,12 @@ def composite_video(background_path: str, audio_path: str,
     inputs = ["-i", background_path, "-i", audio_path]
     filter_parts = []
 
-    # Darken the background so foreground overlays pop visually.
-    # Force format to rgba so the overlay chain has consistent pixel
-    # format across all links — without this, eq's output format can
-    # cause later overlays to silently fail.
+    # Darken the background so foreground overlays pop visually
     if darken:
-        filter_parts.append(
-            "[0:v]eq=brightness=-0.15:saturation=0.85,format=rgba[bg]"
-        )
+        filter_parts.append("[0:v]eq=brightness=-0.15:saturation=0.85[bg]")
         prev_label = "bg"
     else:
-        filter_parts.append("[0:v]format=rgba[bg]")
-        prev_label = "bg"
+        prev_label = "0:v"
 
     for i, overlay in enumerate(overlay_sequence):
         start = overlay["start_s"]
@@ -414,7 +408,7 @@ def composite_video(background_path: str, audio_path: str,
         filter_parts.append(fade_filter)
 
         overlay_filter = (
-            f"[{prev_label}][ov{i}]overlay={x_pos}:y={y_pos}:format=rgb:"
+            f"[{prev_label}][ov{i}]overlay={x_pos}:y={y_pos}:"
             f"enable='between(t,{start},{end})'[tmp{i}]"
         )
         filter_parts.append(overlay_filter)
@@ -450,9 +444,37 @@ def composite_video(background_path: str, audio_path: str,
         output_path,
     ])
 
+    # Build diagnostics dict for UI debugging
+    diagnostics = {
+        "overlay_count": len(overlay_sequence),
+        "filter_complex": filter_complex if filter_complex else "(none)",
+        "overlay_timings": [
+            {
+                "index": i + 1,
+                "image": Path(ov["image_path"]).name,
+                "start_s": ov["start_s"],
+                "end_s": round(ov["start_s"] + ov["duration_s"], 2),
+                "duration_s": ov["duration_s"],
+            }
+            for i, ov in enumerate(overlay_sequence)
+        ],
+        "cmd": " ".join(cmd),
+        "ffmpeg_stderr": "",
+        "success": False,
+    }
+
     logger.info("Compositing %d overlays, output=%s", len(overlay_sequence), output_path)
-    subprocess.run(cmd, check=True, capture_output=True, timeout=240)
-    return output_path
+    result = subprocess.run(cmd, capture_output=True, timeout=240)
+    diagnostics["ffmpeg_stderr"] = result.stderr.decode(errors="replace")[-2000:]
+    diagnostics["success"] = result.returncode == 0
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg exited with code {result.returncode}: "
+            f"{diagnostics['ffmpeg_stderr'][-500:]}"
+        )
+
+    return output_path, diagnostics
 
 
 def generate_slug(topic: str, max_length: int = 40) -> str:

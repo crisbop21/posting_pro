@@ -676,6 +676,40 @@ else:
         else:
             st.warning("Video file not found. You may need to reassemble.")
 
+        # Assembly diagnostics panel
+        diag = st.session_state.get("assembly_diagnostics")
+        if diag:
+            with st.expander("Assembly Diagnostics", expanded=False):
+                st.markdown(f"**Status:** {'Success' if diag.get('success') else 'Failed'}")
+                st.markdown(f"**Overlays composited:** {diag.get('overlay_count', 0)}")
+
+                # Overlay timing table
+                timings = diag.get("overlay_timings", [])
+                if timings:
+                    st.markdown("**Overlay timings:**")
+                    timing_source = "beat map" if st.session_state.get("beat_map") else "even distribution"
+                    st.caption(f"Source: {timing_source}")
+                    for t in timings:
+                        st.text(
+                            f"  #{t['index']}  {t['image']:<30s}  "
+                            f"{t['start_s']:>6.2f}s – {t['end_s']:>6.2f}s  "
+                            f"({t['duration_s']:.2f}s)"
+                        )
+
+                # Filter complex
+                st.markdown("**FFmpeg filter complex:**")
+                st.code(diag.get("filter_complex", ""), language="text")
+
+                # FFmpeg stderr (warnings, format info, errors)
+                stderr = diag.get("ffmpeg_stderr", "")
+                if stderr:
+                    st.markdown("**FFmpeg output (last 2000 chars):**")
+                    st.code(stderr, language="text")
+
+                # Full command
+                st.markdown("**Full command:**")
+                st.code(diag.get("cmd", ""), language="bash")
+
         if st.session_state.get("step6_demo"):
             demo_badge(6)
 
