@@ -39,6 +39,17 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - **Maximum on-screen duration**: 18 seconds.
 - **Gap between overlays**: At least 0.5 seconds of background-only between consecutive overlays.
 
+## Accent text overlays
+
+- Key phrases marked with `**double asterisks**` in the script are rendered as accent text overlays.
+- Each accent phrase is drawn in the style's **accent colour** on a semi-transparent dark pill background (rounded rectangle, ~70% opacity black).
+- Font: bold sans-serif, 64–68 px. Text wraps at 920 px max width.
+- **Position**: Centred horizontally in the caption zone (bottom 200 px). Vertically placed 30 px below the top of the caption zone.
+- **Timing**: Accent overlays are spaced evenly across the video duration. Each displays for ~3 seconds.
+- **Fade in**: 0.3 seconds. **Fade out**: 0.25 seconds.
+- **Z-order**: Accent text is composited on top of all other layers (background, image overlays).
+- Accent overlays are stripped from the voiceover text before TTS generation — they are visual-only.
+
 ## Audio
 
 - Voiceover audio track from ElevenLabs is the master clock.

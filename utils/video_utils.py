@@ -1,13 +1,15 @@
-"""Ken Burns renderer, color grading, cropping, and MoviePy video compositor."""
+"""Ken Burns renderer, color grading, cropping, accent text renderer, and MoviePy video compositor."""
 
 import json
 import random
+import re
 import subprocess
 import tempfile
 from pathlib import Path
 
 import logging
 
+from PIL import Image, ImageDraw, ImageFont
 from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
@@ -352,9 +354,208 @@ def render_green_screen(output_path: str, duration_s: float,
     return output_path
 
 
+# ---------------------------------------------------------------------------
+# Accent text rendering (PIL-based)
+# ---------------------------------------------------------------------------
+
+# Default accent colour — overridden by the visual style's accent_color
+DEFAULT_ACCENT_COLOR = "#FF6B35"
+ACCENT_FONT_SIZE = 64
+ACCENT_FONT_BOLD_SIZE = 68
+ACCENT_TEXT_COLOR = "#FFFFFF"
+ACCENT_BG_ALPHA = 180  # 0–255 background pill opacity
+ACCENT_PADDING_X = 48
+ACCENT_PADDING_Y = 24
+ACCENT_MAX_WIDTH = 920  # max text block width (px), inside 1080 canvas
+
+
+def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    """Load a sans-serif font at the given size, with bold weight if available."""
+    # Try common paths in order of preference
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            return ImageFont.truetype(path, size)
+    # Fallback — PIL default (bitmap, not great but works)
+    return ImageFont.load_default()
+
+
+def parse_accent_phrases(script: str) -> list[dict]:
+    """Extract **accent-tagged** phrases and their positions from a script.
+
+    Returns a list of dicts:
+        {"phrase": "...", "index": int}
+    where index is the order of occurrence (0-based).
+    """
+    return [
+        {"phrase": m.group(1), "index": i}
+        for i, m in enumerate(re.finditer(r"\*\*(.+?)\*\*", script))
+    ]
+
+
+def render_accent_text_image(
+    text: str,
+    accent_color: str = DEFAULT_ACCENT_COLOR,
+    output_path: str | None = None,
+) -> str:
+    """Render a single accent phrase as a transparent PNG with a pill background.
+
+    The text is drawn in the accent colour on a semi-transparent dark pill,
+    centred for compositing onto the video canvas.
+
+    Args:
+        text: The accent phrase to render (plain text, no ** markers).
+        accent_color: Hex colour for the text.
+        output_path: Where to save the PNG.  Auto-generated if None.
+
+    Returns:
+        Path to the rendered PNG image.
+    """
+    font = _load_font(ACCENT_FONT_BOLD_SIZE, bold=True)
+    regular_font = _load_font(ACCENT_FONT_SIZE, bold=False)
+
+    # Measure text bounding box
+    dummy = Image.new("RGBA", (1, 1))
+    draw = ImageDraw.Draw(dummy)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    # Word-wrap if text is too wide
+    if text_w > ACCENT_MAX_WIDTH:
+        words = text.split()
+        lines = []
+        current_line = ""
+        for word in words:
+            test = f"{current_line} {word}".strip()
+            test_bbox = draw.textbbox((0, 0), test, font=font)
+            if test_bbox[2] - test_bbox[0] <= ACCENT_MAX_WIDTH:
+                current_line = test
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        wrapped_text = "\n".join(lines)
+
+        # Re-measure
+        bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+    else:
+        wrapped_text = text
+
+    # Create image with padding (pill shape)
+    img_w = text_w + ACCENT_PADDING_X * 2
+    img_h = text_h + ACCENT_PADDING_Y * 2
+    img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Draw rounded rectangle background (dark pill)
+    pill_radius = min(24, img_h // 2)
+    draw.rounded_rectangle(
+        [(0, 0), (img_w - 1, img_h - 1)],
+        radius=pill_radius,
+        fill=(10, 10, 20, ACCENT_BG_ALPHA),
+    )
+
+    # Draw text in accent colour
+    draw.multiline_text(
+        (ACCENT_PADDING_X, ACCENT_PADDING_Y),
+        wrapped_text,
+        font=font,
+        fill=accent_color,
+        align="center",
+    )
+
+    if output_path is None:
+        Path("tmp").mkdir(exist_ok=True)
+        output_path = tempfile.mktemp(suffix=".png", dir="tmp")
+
+    img.save(output_path, "PNG")
+    return output_path
+
+
+def build_accent_overlay_clips(
+    script: str,
+    total_duration_s: float,
+    accent_color: str = DEFAULT_ACCENT_COLOR,
+) -> list:
+    """Parse accent phrases from script and create timed ImageClip overlays.
+
+    Each accent phrase becomes a short text overlay that appears in the
+    caption zone (bottom 200 px) at evenly spaced intervals throughout the
+    video. They fade in/out and display for 2.5–3.5 seconds each.
+
+    Args:
+        script: The full script text with **accent** markers.
+        total_duration_s: Master video duration in seconds.
+        accent_color: Hex color for accent text.
+
+    Returns:
+        List of MoviePy ImageClip objects positioned and timed, ready for
+        compositing.
+    """
+    phrases = parse_accent_phrases(script)
+    if not phrases:
+        return []
+
+    clips = []
+    count = len(phrases)
+
+    # Space accent overlays evenly across the video duration
+    # Each gets ~3 seconds on screen
+    accent_duration = 3.0
+    gap = max(0.5, (total_duration_s - accent_duration * count) / max(count, 1))
+    current_time = gap / 2  # start after a brief intro
+
+    # Caption zone: bottom 200 px, center the text vertically in it
+    caption_y = CANVAS_HEIGHT - CAPTION_ZONE + 30  # 30px below top of caption zone
+
+    for phrase_info in phrases:
+        if current_time + accent_duration > total_duration_s:
+            break
+
+        # Render the text image
+        img_path = render_accent_text_image(
+            text=phrase_info["phrase"],
+            accent_color=accent_color,
+        )
+
+        clip = (
+            ImageClip(img_path)
+            .with_start(current_time)
+            .with_duration(accent_duration)
+            .with_position(("center", caption_y))
+            .with_effects([
+                vfx.CrossFadeIn(0.3),
+                vfx.CrossFadeOut(0.25),
+            ])
+        )
+        clips.append(clip)
+
+        logger.info(
+            "Accent text '%s' at %.1fs–%.1fs",
+            phrase_info["phrase"],
+            current_time,
+            current_time + accent_duration,
+        )
+
+        current_time += accent_duration + gap
+
+    return clips
+
+
 def composite_video(background_path: str, audio_path: str,
                     overlay_sequence: list[dict], output_path: str,
-                    darken: bool = True) -> str:
+                    darken: bool = True,
+                    accent_text_clips: list | None = None) -> str:
     """Composite overlays and audio onto the background video using MoviePy.
 
     Each overlay is an independent ImageClip layer with its own start time,
@@ -370,6 +571,9 @@ def composite_video(background_path: str, audio_path: str,
             - duration_s: how long the overlay is shown
         output_path: Path for the final output MP4.
         darken: Whether to dim the background for foreground separation.
+        accent_text_clips: Optional list of pre-built MoviePy ImageClip
+            objects for accent text overlays.  These are layered on top
+            of everything else (highest z-order).
 
     Returns:
         Tuple of (output_path, diagnostics_dict).
@@ -495,6 +699,13 @@ def composite_video(background_path: str, audio_path: str,
                 f"Overlays #{i} and #{i+1} overlap: "
                 f"#{i} ends at {prev_end:.2f}s, #{i+1} starts at {curr_start:.2f}s"
             )
+
+    # ------------------------------------------------------------------
+    # Add accent text overlays (highest z-order — on top of everything)
+    # ------------------------------------------------------------------
+    if accent_text_clips:
+        print(f"[COMPOSITE] Adding {len(accent_text_clips)} accent text clips")
+        clips.extend(accent_text_clips)
 
     # ------------------------------------------------------------------
     # Composite and render

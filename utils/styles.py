@@ -8,6 +8,7 @@ VISUAL_STYLES = {
     "cinematic": {
         "label": "Cinematic",
         "description": "Dark, dramatic lighting with extreme contrast — Roger Deakins mood",
+        "accent_color": "#FF6B35",  # warm orange — pops against dark cinematic tones
         "style_brief": (
             "Anamorphic lens bokeh, film-grade colour grading, extreme shallow depth "
             "of field, true-black shadows with a single intense light source. "
@@ -34,6 +35,7 @@ VISUAL_STYLES = {
     "clean": {
         "label": "Clean",
         "description": "Ultra-minimal dark space with one vivid accent — Apple aesthetic",
+        "accent_color": "#00D4FF",  # electric cyan — matches minimal-dark aesthetic
         "style_brief": (
             "Ultra-minimal, geometric precision, dark negative space with a single "
             "intensely vivid accent colour element. Apple product photography aesthetic "
@@ -59,6 +61,7 @@ VISUAL_STYLES = {
     "vintage": {
         "label": "Vintage",
         "description": "Warm film grain with one Kodachrome colour anomaly — dark academia",
+        "accent_color": "#E8C547",  # warm gold — Kodachrome highlight
         "style_brief": (
             "Warm analogue film grain adding tactile texture. Muted earth tones with "
             "one vivid Kodachrome-anomaly accent colour. Slight vignette, nostalgic "
@@ -84,6 +87,7 @@ VISUAL_STYLES = {
     "dynamic": {
         "label": "Dynamic",
         "description": "Neon energy, impossible geometry — Blade Runner meets data viz",
+        "accent_color": "#FF2D78",  # hot magenta — neon energy
         "style_brief": (
             "Maximum energy. Neon light trails, motion blur on particles, electric "
             "colour palette. Impossible geometry, surreal scale distortion. "
@@ -102,6 +106,7 @@ VISUAL_STYLES = {
     "hypnotic": {
         "label": "Hypnotic",
         "description": "Dreamlike iridescence, infinite depth — deep ocean meets luxury",
+        "accent_color": "#A855F7",  # vivid purple — bioluminescent glow
         "style_brief": (
             "Slow, mesmerizing, dreamlike. Iridescent surfaces, oil-on-water colour "
             "shifts, glass refractions, bioluminescent glow. Infinite depth tunnel. "
