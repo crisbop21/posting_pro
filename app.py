@@ -11,6 +11,7 @@ from utils.styles import BACKGROUND_MODES, VISUAL_STYLES
 from utils.demo import load_demo
 from utils.ui_components import (
     approval_bar,
+    beat_map_editor,
     demo_badge,
     locked_step,
     step_card,
@@ -260,6 +261,12 @@ else:
             f"Estimated duration: {st.session_state['estimated_duration_s']}s "
             f"(~{st.session_state['estimated_duration_s'] // 60}m "
             f"{st.session_state['estimated_duration_s'] % 60}s)"
+        )
+
+        # Beat map editor — editable before approval, read-only after
+        beat_map_editor(
+            estimated_duration_s=st.session_state["estimated_duration_s"],
+            editable=not st.session_state["step3_approved"],
         )
 
         # Editable script
