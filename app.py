@@ -575,7 +575,7 @@ else:
     step_card(6, "Assemble Video", "Generate voiceover and composite the final video.")
 
     # Maximum time (seconds) before we consider assembly stuck
-    ASSEMBLY_TIMEOUT_S = 300  # 5 minutes
+    ASSEMBLY_TIMEOUT_S = 900  # 15 minutes — MoviePy composites frame-by-frame
 
     if st.session_state.get("final_video_path") is None:
         if st.session_state["assembly_running"]:
@@ -615,7 +615,7 @@ else:
                     st.session_state.get("assembly_gen_id", 0) + 1
                 )
                 st.error(
-                    "Video assembly timed out after 5 minutes. "
+                    "Video assembly timed out after 15 minutes. "
                     "This may indicate a problem with the inputs. "
                     "Click **Assemble Video** to try again."
                 )
