@@ -8,7 +8,15 @@ from datetime import datetime
 from pathlib import Path
 
 from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
-from utils.video_utils import composite_video, generate_slug, CANVAS_HEIGHT, CAPTION_ZONE
+from utils.styles import VISUAL_STYLES
+from utils.video_utils import (
+    build_accent_overlay_clips,
+    composite_video,
+    generate_slug,
+    DEFAULT_ACCENT_COLOR,
+    CANVAS_HEIGHT,
+    CAPTION_ZONE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +30,9 @@ def _generate_voiceover(script: str) -> str:
     Returns:
         Path to the generated audio file.
     """
-    # Strip [IMAGE: ...] markers from the script for clean voiceover
+    # Strip [IMAGE: ...] markers and **accent** markers for clean voiceover
     clean_script = re.sub(r"\[IMAGE:\s*.+?\]", "", script).strip()
+    clean_script = re.sub(r"\*\*(.+?)\*\*", r"\1", clean_script)
     clean_script = re.sub(r"\s{2,}", " ", clean_script)
 
     Path("tmp").mkdir(exist_ok=True)
@@ -209,6 +218,21 @@ def run(state: dict) -> dict:
     Path("outputs").mkdir(exist_ok=True)
     output_path = f"outputs/{slug}-{date_str}.mp4"
 
+    # Build accent text overlays from **tagged** phrases in the script
+    accent_color = state.get("accent_color")
+    if not accent_color:
+        style_name = state.get("visual_style")
+        style_def = VISUAL_STYLES.get(style_name, {})
+        accent_color = style_def.get("accent_color", DEFAULT_ACCENT_COLOR)
+    print(f"[ASSEMBLE] Accent color: {accent_color}")
+
+    accent_clips = build_accent_overlay_clips(
+        script=script,
+        total_duration_s=duration,
+        accent_color=accent_color,
+    )
+    print(f"[ASSEMBLE] Built {len(accent_clips)} accent text clips")
+
     # Composite the final video
     print(f"[ASSEMBLE] Compositing video to {output_path}...")
     for attempt in range(MAX_RETRIES + 1):
@@ -218,6 +242,7 @@ def run(state: dict) -> dict:
                 audio_path=audio_path,
                 overlay_sequence=overlay_sequence,
                 output_path=output_path,
+                accent_text_clips=accent_clips,
             )
             print(f"[ASSEMBLE] Video composited successfully: {output_path}")
             state["final_video_path"] = output_path
