@@ -679,31 +679,57 @@ else:
         # Assembly diagnostics panel
         diag = st.session_state.get("assembly_diagnostics")
         if diag:
-            with st.expander("Assembly Diagnostics", expanded=False):
+            # Show warnings prominently outside the expander
+            diag_warnings = diag.get("warnings", [])
+            if diag_warnings:
+                for w in diag_warnings:
+                    st.warning(w)
+
+            with st.expander("Assembly Diagnostics", expanded=bool(diag_warnings)):
                 st.markdown(f"**Status:** {'Success' if diag.get('success') else 'Failed'}")
-                st.markdown(f"**Overlays composited:** {diag.get('overlay_count', 0)}")
+
+                # Input info
+                bg = diag.get("background", {})
+                aud = diag.get("audio", {})
+                st.markdown("**Inputs:**")
+                st.text(
+                    f"  Background: {bg.get('file', '?')}  "
+                    f"{bg.get('width', '?')}x{bg.get('height', '?')}  "
+                    f"{bg.get('duration_s', '?')}s  "
+                    f"fmt={bg.get('pix_fmt', '?')}"
+                )
+                st.text(
+                    f"  Audio:      {aud.get('file', '?')}  "
+                    f"{aud.get('duration_s', '?')}s  "
+                    f"codec={aud.get('codec', '?')}"
+                )
 
                 # Overlay timing table
                 timings = diag.get("overlay_timings", [])
+                st.markdown(
+                    f"**Overlays: {diag.get('overlay_count', 0)}**"
+                )
                 if timings:
-                    st.markdown("**Overlay timings:**")
                     timing_source = "beat map" if st.session_state.get("beat_map") else "even distribution"
                     st.caption(f"Source: {timing_source}")
                     for t in timings:
                         st.text(
                             f"  #{t['index']}  {t['image']:<30s}  "
                             f"{t['start_s']:>6.2f}s – {t['end_s']:>6.2f}s  "
-                            f"({t['duration_s']:.2f}s)"
+                            f"({t['duration_s']:.1f}s)  "
+                            f"{t.get('dimensions', '')}"
                         )
 
                 # Filter complex
                 st.markdown("**FFmpeg filter complex:**")
-                st.code(diag.get("filter_complex", ""), language="text")
+                fc = diag.get("filter_complex", "")
+                # Pretty-print: one filter per line
+                st.code(fc.replace(";", ";\n"), language="text")
 
-                # FFmpeg stderr (warnings, format info, errors)
+                # FFmpeg stderr
                 stderr = diag.get("ffmpeg_stderr", "")
                 if stderr:
-                    st.markdown("**FFmpeg output (last 2000 chars):**")
+                    st.markdown("**FFmpeg output (last 3000 chars):**")
                     st.code(stderr, language="text")
 
                 # Full command
