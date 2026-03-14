@@ -375,12 +375,18 @@ def composite_video(background_path: str, audio_path: str,
     inputs = ["-i", background_path, "-i", audio_path]
     filter_parts = []
 
-    # Darken the background so foreground overlays pop visually
+    # Darken the background so foreground overlays pop visually.
+    # Force format to rgba so the overlay chain has consistent pixel
+    # format across all links — without this, eq's output format can
+    # cause later overlays to silently fail.
     if darken:
-        filter_parts.append("[0:v]eq=brightness=-0.15:saturation=0.85[bg]")
+        filter_parts.append(
+            "[0:v]eq=brightness=-0.15:saturation=0.85,format=rgba[bg]"
+        )
         prev_label = "bg"
     else:
-        prev_label = "0:v"
+        filter_parts.append("[0:v]format=rgba[bg]")
+        prev_label = "bg"
 
     for i, overlay in enumerate(overlay_sequence):
         start = overlay["start_s"]
@@ -408,7 +414,7 @@ def composite_video(background_path: str, audio_path: str,
         filter_parts.append(fade_filter)
 
         overlay_filter = (
-            f"[{prev_label}][ov{i}]overlay={x_pos}:y={y_pos}:"
+            f"[{prev_label}][ov{i}]overlay={x_pos}:y={y_pos}:format=rgb:"
             f"enable='between(t,{start},{end})'[tmp{i}]"
         )
         filter_parts.append(overlay_filter)
