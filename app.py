@@ -511,9 +511,9 @@ else:
     if not st.session_state.get("overlay_sequence"):
         _col_run5, _col_demo5 = st.columns([1, 1])
         with _col_run5:
-            if st.button("Source Images", key="btn_images", type="primary"):
+            if st.button("Search Web Images", key="btn_images", type="primary"):
                 try:
-                    with st.spinner("Searching for images..."):
+                    with st.spinner("Searching Pexels for images..."):
                         from pipeline.images import run as images_run
 
                         state = {k: st.session_state[k] for k in st.session_state}
@@ -526,70 +526,93 @@ else:
                     msg = str(e).rstrip(". ")
                     st.error(
                         f"Could not source images: {msg}. "
-                        "Click **Source Images** to try again."
+                        "Click **Search Web Images** to try again."
                     )
         with _col_demo5:
             if st.button("Use Demo Output", key="btn_demo_5"):
                 _apply_demo(5)
                 st.rerun()
-
-        # --- Upload your own images instead ---
-        st.divider()
-        st.subheader("Or upload your own images")
-        st.caption(
-            "Upload overlay images directly instead of auto-sourcing. "
-            "Images will be processed with rounded corners and drop shadow."
-        )
-        uploaded_overlays = st.file_uploader(
-            "Upload overlay images",
-            type=["png", "jpg", "jpeg", "webp"],
-            accept_multiple_files=True,
-            key="uploader_overlay_images",
-        )
-        if uploaded_overlays:
-            if st.button("Use uploaded images", key="btn_use_uploaded_overlays", type="primary"):
-                from utils.image_utils import process_overlay
-
-                Path("tmp").mkdir(exist_ok=True)
-                overlay_paths = []
-                for j, up_file in enumerate(uploaded_overlays):
-                    save_path = f"tmp/upload_overlay_{j}_{up_file.name}"
-                    with open(save_path, "wb") as f:
-                        f.write(up_file.getbuffer())
-                    processed = process_overlay(save_path)
-                    overlay_paths.append(processed)
-                st.session_state["overlay_sequence"] = overlay_paths
-                st.rerun()
     else:
         overlays = st.session_state["overlay_sequence"]
+        sources = st.session_state.get("overlay_sources", ["pexels"] * len(overlays))
+
+        # Ensure sources list matches overlays length
+        while len(sources) < len(overlays):
+            sources.append("pexels")
+        st.session_state["overlay_sources"] = sources
+
+        from pipeline.images import _extract_image_markers
+        _markers = _extract_image_markers(st.session_state.get("script", ""))
+
         st.write(f"{len(overlays)} overlay image(s) sourced.")
 
-        # Display image grid
+        # Display image grid with per-slot swap controls
         cols = st.columns(min(len(overlays), 3)) if overlays else []
         for i, img_path in enumerate(overlays):
             with cols[i % len(cols)]:
-                if Path(img_path).exists():
-                    st.image(img_path, caption=f"Overlay {i + 1}", width="stretch")
+                # Source badge
+                _src = sources[i] if i < len(sources) else "pexels"
+                _badge = {"pexels": "WEB", "dalle": "DALL-E", "upload": "UPLOAD", "missing": "MISSING"}.get(_src, _src.upper())
+                st.caption(f"**{_badge}** — Overlay {i + 1}")
 
-                    # Per-slot DALL-E swap button
-                    if st.button(f"Swap #{i + 1} with DALL-E", key=f"swap_dalle_{i}"):
-                        import re
+                if img_path and Path(img_path).exists():
+                    st.image(img_path, width="stretch")
+                else:
+                    st.warning(f"No image for slot {i + 1}.")
 
-                        from pipeline.images import _generate_dalle_image, _extract_image_markers
+                # --- Swap options ---
+                swap_choice = st.selectbox(
+                    f"Swap #{i + 1}",
+                    options=["—", "Search web", "Generate DALL-E", "Upload"],
+                    key=f"swap_choice_{i}",
+                    label_visibility="collapsed",
+                )
 
-                        markers = _extract_image_markers(st.session_state.get("script", ""))
-                        if i < len(markers):
-                            with st.spinner(f"Generating replacement for overlay {i + 1}..."):
-                                new_path = _generate_dalle_image(markers[i])
-                                if new_path:
-                                    st.session_state["overlay_sequence"][i] = new_path
-                                    st.rerun()
-                                else:
-                                    st.error("Could not generate a replacement image.")
+                if swap_choice == "Search web":
+                    _marker_desc = _markers[i] if i < len(_markers) else ""
+                    _custom_q = st.text_input(
+                        "Search query",
+                        value=_marker_desc,
+                        key=f"web_query_{i}",
+                        placeholder="e.g. stock market graph",
+                    )
+                    if st.button("Search", key=f"btn_web_search_{i}"):
+                        if _custom_q.strip():
+                            try:
+                                with st.spinner("Searching Pexels..."):
+                                    from pipeline.images import _search_pexels_for_marker
+                                    new_path = _search_pexels_for_marker(_custom_q.strip())
+                                    if new_path:
+                                        st.session_state["overlay_sequence"][i] = new_path
+                                        st.session_state["overlay_sources"][i] = "pexels"
+                                        st.rerun()
+                                    else:
+                                        st.error("No results. Try a different query.")
+                            except Exception as e:
+                                st.error(f"Search failed: {e}")
 
-                    # Per-slot upload replacement
+                elif swap_choice == "Generate DALL-E":
+                    _marker_desc = _markers[i] if i < len(_markers) else ""
+                    if st.button("Generate", key=f"btn_dalle_{i}"):
+                        if _marker_desc:
+                            try:
+                                with st.spinner(f"Generating DALL-E image..."):
+                                    from pipeline.images import _generate_dalle_image
+                                    new_path = _generate_dalle_image(_marker_desc)
+                                    if new_path:
+                                        st.session_state["overlay_sequence"][i] = new_path
+                                        st.session_state["overlay_sources"][i] = "dalle"
+                                        st.rerun()
+                                    else:
+                                        st.error("DALL-E generation failed.")
+                            except Exception as e:
+                                st.error(f"DALL-E failed: {e}")
+                        else:
+                            st.error("No image marker description available for this slot.")
+
+                elif swap_choice == "Upload":
                     replacement = st.file_uploader(
-                        f"Replace #{i + 1}",
+                        f"Upload image for slot {i + 1}",
                         type=["png", "jpg", "jpeg", "webp"],
                         key=f"upload_replace_{i}",
                         label_visibility="collapsed",
@@ -603,6 +626,7 @@ else:
                             f.write(replacement.getbuffer())
                         processed = process_overlay(save_path)
                         st.session_state["overlay_sequence"][i] = processed
+                        st.session_state["overlay_sources"][i] = "upload"
                         del st.session_state[f"upload_replace_{i}"]
                         st.rerun()
 

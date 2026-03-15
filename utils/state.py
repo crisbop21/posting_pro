@@ -39,6 +39,7 @@ DEFAULT_STATE = {
 
     # Step 5 — Image sourcing
     "overlay_sequence": [],       # list of image paths in script order
+    "overlay_sources": [],        # list of "pexels" | "dalle" | "upload" per slot
     "accent_color": None,         # hex color for accent text (auto from visual style, or user override)
 
     # Step 6 — Video assembly
