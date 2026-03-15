@@ -443,7 +443,7 @@ else:
             for i, clip in enumerate(results):
                 with cols[i % 4]:
                     if clip.get("image"):
-                        st.image(clip["image"], use_container_width=True)
+                        st.image(clip["image"], width="stretch")
                     st.caption(f"{clip.get('duration', '?')}s · {clip.get('width', '?')}×{clip.get('height', '?')}")
                     st.button(
                         "Use this clip",
@@ -568,7 +568,7 @@ else:
         for i, img_path in enumerate(overlays):
             with cols[i % len(cols)]:
                 if Path(img_path).exists():
-                    st.image(img_path, caption=f"Overlay {i + 1}", use_container_width=True)
+                    st.image(img_path, caption=f"Overlay {i + 1}", width="stretch")
 
                     # Per-slot DALL-E swap button
                     if st.button(f"Swap #{i + 1} with DALL-E", key=f"swap_dalle_{i}"):
@@ -799,7 +799,7 @@ else:
                 )
                 if Path(preview_path).exists():
                     with st.expander("Frame Preview (1s mark)", expanded=True):
-                        st.image(preview_path, caption="Composite at t=1s — verify title, chart, and overlays are visible", use_container_width=True)
+                        st.image(preview_path, caption="Composite at t=1s — verify title, chart, and overlays are visible", width="stretch")
             except Exception:
                 pass  # non-critical — skip silently
         else:
