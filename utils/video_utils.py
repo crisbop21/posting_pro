@@ -12,7 +12,6 @@ import logging
 from PIL import Image, ImageDraw, ImageFont
 from moviepy import (
     AudioFileClip,
-    ColorClip,
     CompositeVideoClip,
     ImageClip,
     VideoFileClip,
@@ -356,62 +355,6 @@ def render_green_screen(output_path: str, duration_s: float,
 
 
 # ---------------------------------------------------------------------------
-# Backing panel helper — black rectangle behind text overlays
-# ---------------------------------------------------------------------------
-
-
-def _make_backing_panel(
-    clip_w: int,
-    clip_h: int,
-    start: float,
-    duration: float,
-    position: tuple,
-    effects: list,
-    pad_w: int = 40,
-    pad_h: int = 20,
-) -> ColorClip:
-    """Create a black semi-transparent rectangle sized to back a text clip.
-
-    The panel is 60 % opaque black, *pad_w* px wider and *pad_h* px taller
-    than the element it backs. It shares the same start time, duration, and
-    fade effects so the two stay perfectly synchronised.
-
-    Args:
-        clip_w: Width of the text/image clip to back (pixels).
-        clip_h: Height of the text/image clip to back (pixels).
-        start: Start time in seconds.
-        duration: Duration in seconds.
-        position: Position tuple, e.g. ("center", 300).
-        effects: List of MoviePy effects (fades, etc.).
-        pad_w: Extra width added (split equally left/right).
-        pad_h: Extra height added (split equally top/bottom).
-
-    Returns:
-        A MoviePy ColorClip ready to be composited one layer below
-        the text clip.
-    """
-    panel_w = clip_w + pad_w
-    panel_h = clip_h + pad_h
-
-    # Offset position so the panel centres behind the text clip.
-    h_pos, v_pos = position
-    if h_pos == "center":
-        panel_position = ("center", v_pos - pad_h // 2)
-    else:
-        panel_position = (h_pos - pad_w // 2, v_pos - pad_h // 2)
-
-    panel = (
-        ColorClip(size=(panel_w, panel_h), color=(0, 0, 0))
-        .with_opacity(0.6)
-        .with_start(start)
-        .with_duration(duration)
-        .with_position(panel_position)
-        .with_effects(list(effects))
-    )
-    return panel
-
-
-# ---------------------------------------------------------------------------
 # Accent text rendering (PIL-based)
 # ---------------------------------------------------------------------------
 
@@ -585,32 +528,20 @@ def build_accent_overlay_clips(
             accent_color=accent_color,
         )
 
-        accent_img = Image.open(img_path)
-        accent_pos = ("center", caption_y)
-        accent_effects = [
-            vfx.CrossFadeIn(0.3),
-            vfx.CrossFadeOut(0.25),
-        ]
-
-        # Backing panel sits one layer below the text
-        backing = _make_backing_panel(
-            clip_w=accent_img.width, clip_h=accent_img.height,
-            start=current_time, duration=accent_duration,
-            position=accent_pos, effects=accent_effects,
-        )
-        clips.append(backing)
-
         clip = (
             ImageClip(img_path)
             .with_start(current_time)
             .with_duration(accent_duration)
-            .with_position(accent_pos)
-            .with_effects(accent_effects)
+            .with_position(("center", caption_y))
+            .with_effects([
+                vfx.CrossFadeIn(0.3),
+                vfx.CrossFadeOut(0.25),
+            ])
         )
         clips.append(clip)
 
         logger.info(
-            "Accent text '%s' at %.1fs–%.1fs (with backing panel)",
+            "Accent text '%s' at %.1fs–%.1fs",
             phrase_info["phrase"],
             current_time,
             current_time + accent_duration,
@@ -723,7 +654,7 @@ def build_title_clip(
     total_duration_s: float,
     font_color: str = "#FFFFFF",
     duration_s: float = TITLE_DEFAULT_DURATION,
-) -> list | None:
+) -> ImageClip | None:
     """Create a timed ImageClip title overlay for the video intro.
 
     The title appears centred in the upper third of the safe zone,
@@ -737,8 +668,8 @@ def build_title_clip(
         duration_s: How long the title stays on screen.
 
     Returns:
-        A list of [backing_panel, title_clip] MoviePy clips, or None
-        if title_text is empty.
+        A MoviePy ImageClip positioned and timed, or None if title_text
+        is empty.
     """
     if not title_text or not title_text.strip():
         return None
@@ -748,34 +679,25 @@ def build_title_clip(
         return None
 
     img_path = render_title_image(text=title_text.strip(), font_color=font_color)
-    title_img = Image.open(img_path)
 
     # Position: centred horizontally, upper third of the safe zone
     # Safe zone = top to (CANVAS_HEIGHT - CAPTION_ZONE)
     safe_zone_h = CANVAS_HEIGHT - CAPTION_ZONE
     title_y = int(safe_zone_h * 0.18)  # ~18% down from top
-    title_pos = ("center", title_y)
-    title_effects = [
-        vfx.CrossFadeIn(0.5),
-        vfx.CrossFadeOut(0.4),
-    ]
-
-    backing = _make_backing_panel(
-        clip_w=title_img.width, clip_h=title_img.height,
-        start=0.3, duration=duration_s,
-        position=title_pos, effects=title_effects,
-    )
 
     clip = (
         ImageClip(img_path)
         .with_start(0.3)  # slight delay after video start
         .with_duration(duration_s)
-        .with_position(title_pos)
-        .with_effects(title_effects)
+        .with_position(("center", title_y))
+        .with_effects([
+            vfx.CrossFadeIn(0.5),
+            vfx.CrossFadeOut(0.4),
+        ])
     )
 
-    logger.info("Title clip '%s' at 0.3s–%.1fs (with backing panel)", title_text, 0.3 + duration_s)
-    return [backing, clip]
+    logger.info("Title clip '%s' at 0.3s–%.1fs", title_text, 0.3 + duration_s)
+    return clip
 
 
 # ---------------------------------------------------------------------------
@@ -794,7 +716,7 @@ def build_chart_clip(
     total_duration_s: float,
     start_s: float = 0.0,
     duration_s: float | None = None,
-) -> list | None:
+) -> ImageClip | None:
     """Load a user-uploaded image and create a positioned ImageClip for the
     bottom third of the safe zone.
 
@@ -810,8 +732,8 @@ def build_chart_clip(
                     total_duration_s (full video).
 
     Returns:
-        A list of [backing_panel, chart_clip] MoviePy clips, or None
-        if the image cannot be loaded.
+        A MoviePy ImageClip positioned in the bottom third of the safe
+        zone, or None if the image cannot be loaded.
     """
     fpath = Path(image_path)
     if not fpath.exists():
@@ -872,31 +794,22 @@ def build_chart_clip(
     print(f"[CHART] Position: center, y={chart_y}")
     print(f"[CHART] Timing: start={start_s:.1f}s, duration={duration_s:.1f}s")
 
-    chart_pos = ("center", chart_y)
-    chart_effects = [
-        vfx.CrossFadeIn(CHART_FADE_IN),
-        vfx.CrossFadeOut(CHART_FADE_OUT),
-    ]
-
-    backing = _make_backing_panel(
-        clip_w=img.width, clip_h=img.height,
-        start=start_s, duration=duration_s,
-        position=chart_pos, effects=chart_effects,
-    )
-
     clip = (
         ImageClip(debug_path)
         .with_start(start_s)
         .with_duration(duration_s)
-        .with_position(chart_pos)
-        .with_effects(chart_effects)
+        .with_position(("center", chart_y))
+        .with_effects([
+            vfx.CrossFadeIn(CHART_FADE_IN),
+            vfx.CrossFadeOut(CHART_FADE_OUT),
+        ])
     )
 
     logger.info(
-        "Chart clip '%s' at %.1fs–%.1fs, y=%d (with backing panel)",
+        "Chart clip '%s' at %.1fs–%.1fs, y=%d",
         fpath.name, start_s, start_s + duration_s, chart_y,
     )
-    return [backing, clip]
+    return clip
 
 
 def composite_video(background_path: str, audio_path: str,
@@ -1053,21 +966,15 @@ def composite_video(background_path: str, audio_path: str,
     # Add chart overlay (above image overlays)
     # ------------------------------------------------------------------
     if chart_clip is not None:
-        print("[COMPOSITE] Adding chart clip (with backing panel)")
-        if isinstance(chart_clip, list):
-            clips.extend(chart_clip)
-        else:
-            clips.append(chart_clip)
+        print("[COMPOSITE] Adding chart clip")
+        clips.append(chart_clip)
 
     # ------------------------------------------------------------------
     # Add title overlay (above chart, below accent text)
     # ------------------------------------------------------------------
     if title_clip is not None:
-        print("[COMPOSITE] Adding title clip (with backing panel)")
-        if isinstance(title_clip, list):
-            clips.extend(title_clip)
-        else:
-            clips.append(title_clip)
+        print("[COMPOSITE] Adding title clip")
+        clips.append(title_clip)
 
     # ------------------------------------------------------------------
     # Add accent text overlays (highest z-order — on top of everything)
