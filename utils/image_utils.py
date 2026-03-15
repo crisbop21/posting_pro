@@ -73,6 +73,11 @@ def download_image(url: str, dest_dir: str | None = None) -> str | None:
         try:
             resp = requests.get(url, timeout=30)
             resp.raise_for_status()
+            content_type = resp.headers.get("Content-Type", "")
+            if content_type and not content_type.startswith("image/"):
+                raise requests.RequestException(
+                    f"Expected image, got {content_type}"
+                )
             suffix = ".jpg"
             tmp_file = tempfile.NamedTemporaryFile(
                 dir=str(dest), suffix=suffix, delete=False

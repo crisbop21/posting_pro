@@ -556,7 +556,10 @@ else:
                 st.caption(f"**{_badge}** — Overlay {i + 1}")
 
                 if img_path and Path(img_path).exists():
-                    st.image(img_path, width="stretch")
+                    try:
+                        st.image(img_path, width="stretch")
+                    except Exception:
+                        st.warning(f"Image for slot {i + 1} is corrupt. Use swap options below to replace it.")
                 else:
                     st.warning(f"No image for slot {i + 1}.")
 
