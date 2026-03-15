@@ -673,6 +673,10 @@ else:
                     print(f"[ASSEMBLE] background_video_path: {state_snapshot.get('background_video_path')}")
                     print(f"[ASSEMBLE] script length: {len(state_snapshot.get('script') or '')}")
                     print(f"[ASSEMBLE] overlay_sequence count: {len(state_snapshot.get('overlay_sequence', []))}")
+                    print(f"[ASSEMBLE] title_enabled: {state_snapshot.get('title_enabled')}")
+                    print(f"[ASSEMBLE] title_text: '{state_snapshot.get('title_text')}'")
+                    print(f"[ASSEMBLE] chk_title_enabled: {state_snapshot.get('chk_title_enabled')}")
+                    print(f"[ASSEMBLE] input_title_text: '{state_snapshot.get('input_title_text')}'")
 
                     # Shared result dict — thread writes here, main thread reads
                     _result = {"done": False, "error": None, "state": None}
@@ -744,6 +748,7 @@ else:
                     f"{aud.get('duration_s', '?')}s"
                 )
                 st.text(f"  Darken:     {diag.get('darken', '?')}")
+                st.text(f"  Title:      {'Yes' if diag.get('title_overlay') else 'No'}")
 
                 # Overlay timing table
                 timings = diag.get("overlay_timings", [])
