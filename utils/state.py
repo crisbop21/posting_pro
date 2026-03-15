@@ -44,6 +44,7 @@ DEFAULT_STATE = {
     # Step 6 — Video assembly
     "title_text": "",              # title overlay text (auto-generated or user-edited)
     "title_enabled": True,         # whether to render the title overlay
+    "chart_image_path": None,      # path to user-uploaded chart/image for bottom-third overlay
     "final_video_path": None,
 
     # Assembly diagnostics (populated after video render)

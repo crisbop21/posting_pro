@@ -599,6 +599,30 @@ else:
         )
         st.session_state["title_text"] = title_text
 
+    # --- Chart image upload ---
+    st.subheader("Chart Overlay (optional)")
+    uploaded_chart = st.file_uploader(
+        "Upload a chart or image for the bottom third of the video",
+        type=["png", "jpg", "jpeg", "webp"],
+        key="uploader_chart_image",
+    )
+    if uploaded_chart is not None:
+        # Save uploaded file to tmp/ and store path in state
+        Path("tmp").mkdir(exist_ok=True)
+        chart_save_path = f"tmp/chart_upload_{uploaded_chart.name}"
+        with open(chart_save_path, "wb") as f:
+            f.write(uploaded_chart.getbuffer())
+        st.session_state["chart_image_path"] = chart_save_path
+        st.image(chart_save_path, caption="Chart preview", width=300)
+        st.caption(f"Saved to: `{chart_save_path}`")
+    elif st.session_state.get("chart_image_path"):
+        chart_path = st.session_state["chart_image_path"]
+        if Path(chart_path).exists():
+            st.image(chart_path, caption="Previously uploaded chart", width=300)
+        else:
+            st.session_state["chart_image_path"] = None
+            st.caption("No chart uploaded.")
+
     st.divider()
 
     # Maximum time (seconds) before we consider assembly stuck
@@ -677,6 +701,7 @@ else:
                     print(f"[ASSEMBLE] title_text: '{state_snapshot.get('title_text')}'")
                     print(f"[ASSEMBLE] chk_title_enabled: {state_snapshot.get('chk_title_enabled')}")
                     print(f"[ASSEMBLE] input_title_text: '{state_snapshot.get('input_title_text')}'")
+                    print(f"[ASSEMBLE] chart_image_path: {state_snapshot.get('chart_image_path')}")
 
                     # Shared result dict — thread writes here, main thread reads
                     _result = {"done": False, "error": None, "state": None}
@@ -749,6 +774,7 @@ else:
                 )
                 st.text(f"  Darken:     {diag.get('darken', '?')}")
                 st.text(f"  Title:      {'Yes' if diag.get('title_overlay') else 'No'}")
+                st.text(f"  Chart:      {'Yes' if diag.get('chart_overlay') else 'No'}")
 
                 # Overlay timing table
                 timings = diag.get("overlay_timings", [])
