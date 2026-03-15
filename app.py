@@ -594,18 +594,15 @@ else:
                         label_visibility="collapsed",
                     )
                     if replacement is not None:
-                        upload_sig = f"{replacement.name}_{replacement.size}"
-                        if st.session_state.get(f"_processed_upload_{i}") != upload_sig:
-                            from utils.image_utils import process_overlay
+                        from utils.image_utils import process_overlay
 
-                            Path("tmp").mkdir(exist_ok=True)
-                            save_path = f"tmp/replace_overlay_{i}_{replacement.name}"
-                            with open(save_path, "wb") as f:
-                                f.write(replacement.getbuffer())
-                            processed = process_overlay(save_path)
-                            st.session_state["overlay_sequence"][i] = processed
-                            st.session_state[f"_processed_upload_{i}"] = upload_sig
-                            st.rerun()
+                        Path("tmp").mkdir(exist_ok=True)
+                        save_path = f"tmp/replace_overlay_{i}_{replacement.name}"
+                        with open(save_path, "wb") as f:
+                            f.write(replacement.getbuffer())
+                        processed = process_overlay(save_path)
+                        st.session_state["overlay_sequence"][i] = processed
+                        st.rerun()
 
         if st.session_state.get("step5_demo"):
             demo_badge(5)
