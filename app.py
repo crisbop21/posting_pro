@@ -602,6 +602,7 @@ else:
                             f.write(replacement.getbuffer())
                         processed = process_overlay(save_path)
                         st.session_state["overlay_sequence"][i] = processed
+                        del st.session_state[f"upload_replace_{i}"]
                         st.rerun()
 
         if st.session_state.get("step5_demo"):
