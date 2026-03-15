@@ -50,18 +50,6 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - **Z-order**: Accent text is composited on top of all other layers (background, image overlays).
 - Accent overlays are stripped from the voiceover text before TTS generation — they are visual-only.
 
-## Chart / uploaded image overlay
-
-- An optional user-uploaded image (chart, graph, screenshot) is composited into the **bottom third of the safe zone**.
-- The safe zone runs from y=0 to y=1720 (above the 200 px caption zone). The bottom third starts at y≈1147.
-- The chart is resized to fit within **918 px wide × 380 px tall**, preserving aspect ratio.
-- **Rounded corners**: 24 px radius.
-- **Position**: Centred horizontally, vertically centred within the bottom third of the safe zone.
-- **Timing**: Defaults to the full video duration. Configurable start time and duration.
-- **Fade in**: 0.4 seconds. **Fade out**: 0.3 seconds.
-- **Z-order**: Above image overlays, below title text and accent text.
-- The processed chart is saved to `tmp/_chart_processed.png` for debug inspection.
-
 ## Title text overlay
 
 - An optional **title card** is rendered as the topmost text layer during the video intro.
