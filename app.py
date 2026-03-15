@@ -531,6 +531,34 @@ else:
             if st.button("Use Demo Output", key="btn_demo_5"):
                 _apply_demo(5)
                 st.rerun()
+
+        # --- Upload your own images instead ---
+        st.divider()
+        st.subheader("Or upload your own images")
+        st.caption(
+            "Upload overlay images directly instead of auto-sourcing. "
+            "Images will be processed with rounded corners and drop shadow."
+        )
+        uploaded_overlays = st.file_uploader(
+            "Upload overlay images",
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+            key="uploader_overlay_images",
+        )
+        if uploaded_overlays:
+            if st.button("Use uploaded images", key="btn_use_uploaded_overlays", type="primary"):
+                from utils.image_utils import process_overlay
+
+                Path("tmp").mkdir(exist_ok=True)
+                overlay_paths = []
+                for j, up_file in enumerate(uploaded_overlays):
+                    save_path = f"tmp/upload_overlay_{j}_{up_file.name}"
+                    with open(save_path, "wb") as f:
+                        f.write(up_file.getbuffer())
+                    processed = process_overlay(save_path)
+                    overlay_paths.append(processed)
+                st.session_state["overlay_sequence"] = overlay_paths
+                st.rerun()
     else:
         overlays = st.session_state["overlay_sequence"]
         st.write(f"{len(overlays)} overlay image(s) sourced.")
@@ -557,6 +585,24 @@ else:
                                     st.rerun()
                                 else:
                                     st.error("Could not generate a replacement image.")
+
+                    # Per-slot upload replacement
+                    replacement = st.file_uploader(
+                        f"Replace #{i + 1}",
+                        type=["png", "jpg", "jpeg", "webp"],
+                        key=f"upload_replace_{i}",
+                        label_visibility="collapsed",
+                    )
+                    if replacement is not None:
+                        from utils.image_utils import process_overlay
+
+                        Path("tmp").mkdir(exist_ok=True)
+                        save_path = f"tmp/replace_overlay_{i}_{replacement.name}"
+                        with open(save_path, "wb") as f:
+                            f.write(replacement.getbuffer())
+                        processed = process_overlay(save_path)
+                        st.session_state["overlay_sequence"][i] = processed
+                        st.rerun()
 
         if st.session_state.get("step5_demo"):
             demo_badge(5)
