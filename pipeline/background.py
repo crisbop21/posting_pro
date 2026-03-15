@@ -15,7 +15,7 @@ from pathlib import Path
 
 import requests
 
-from utils.api_clients import claude, openai_client, pexels
+from utils.api_clients import claude, openai_client, pexels, _ensure_pexels_auth
 from utils.styles import VISUAL_STYLES
 from utils.video_utils import (
     CANVAS_HEIGHT,
@@ -44,12 +44,26 @@ def search_pexels_videos(query: str, per_page: int = 15) -> list[dict]:
     Returns:
         List of dicts with keys: id, image (preview), duration, video_files.
     """
+    _ensure_pexels_auth()
     for attempt in range(MAX_RETRIES + 1):
         try:
             resp = pexels.get(PEXELS_VIDEO_URL, params={
                 "query": query,
                 "per_page": per_page,
             }, timeout=30)
+            if resp.status_code == 401:
+                auth_header = pexels.headers.get("Authorization", "")
+                if not auth_header:
+                    raise RuntimeError(
+                        "PEXELS_API_KEY is not configured. Add it to your "
+                        "Streamlit Cloud secrets (Settings → Secrets) with "
+                        "the exact name PEXELS_API_KEY."
+                    )
+                raise RuntimeError(
+                    "Pexels rejected the API key (401 Unauthorized). "
+                    "Verify your PEXELS_API_KEY is correct and active at "
+                    "pexels.com/api."
+                )
             resp.raise_for_status()
             data = resp.json()
             results = []
@@ -70,6 +84,8 @@ def search_pexels_videos(query: str, per_page: int = 15) -> list[dict]:
                         "video_url": best_file["link"],
                     })
             return results
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.warning("Pexels video search failed (attempt %d): %s", attempt + 1, e)
             if attempt == MAX_RETRIES:
@@ -219,6 +235,7 @@ def _fetch_stock_broll(state: dict) -> str:
         all_queries = list(queries) + [q for q in fallback_queries if q not in queries]
 
     if not video_url:
+        _ensure_pexels_auth()
         for query in all_queries:
             try:
                 # Note: Pexels Videos API does not support 'orientation' param

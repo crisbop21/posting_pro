@@ -6,7 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from utils.api_clients import claude, openai_client, pexels
+from utils.api_clients import claude, openai_client, pexels, _ensure_pexels_auth
 from utils.image_utils import search_pexels, download_image, process_overlay
 
 MAX_RETRIES = 2
@@ -88,6 +88,7 @@ def run(state: dict) -> dict:
 
     for description in markers:
         query = _generate_search_query(description)
+        _ensure_pexels_auth()
         results = search_pexels(pexels, query)
 
         if results:
