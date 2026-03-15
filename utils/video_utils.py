@@ -700,124 +700,11 @@ def build_title_clip(
     return clip
 
 
-# ---------------------------------------------------------------------------
-# Chart / uploaded image overlay (PIL resize → ImageClip)
-# ---------------------------------------------------------------------------
-
-# Bottom third of the safe zone: from ~1147px to ~1520px (above caption zone)
-CHART_MAX_WIDTH = 918  # same as regular overlays (85% of 1080)
-CHART_MAX_HEIGHT = 380  # fits comfortably in bottom third
-CHART_FADE_IN = 0.4
-CHART_FADE_OUT = 0.3
-
-
-def build_chart_clip(
-    image_path: str,
-    total_duration_s: float,
-    start_s: float = 0.0,
-    duration_s: float | None = None,
-) -> ImageClip | None:
-    """Load a user-uploaded image and create a positioned ImageClip for the
-    bottom third of the safe zone.
-
-    The image is resized to fit within CHART_MAX_WIDTH x CHART_MAX_HEIGHT,
-    processed with rounded corners and drop shadow (via process_overlay),
-    and a resized debug copy is saved to tmp/ for visual inspection.
-
-    Args:
-        image_path: Path to the uploaded image file.
-        total_duration_s: Master video duration (used to clamp).
-        start_s: When the chart appears (seconds).
-        duration_s: How long the chart stays on screen.  Defaults to
-                    total_duration_s (full video).
-
-    Returns:
-        A MoviePy ImageClip positioned in the bottom third of the safe
-        zone, or None if the image cannot be loaded.
-    """
-    fpath = Path(image_path)
-    if not fpath.exists():
-        print(f"[CHART] File not found: {image_path}")
-        return None
-
-    try:
-        img = Image.open(image_path).convert("RGBA")
-        print(f"[CHART] Loaded {image_path}: {img.width}x{img.height}")
-    except Exception as e:
-        print(f"[CHART] Failed to open image: {e}")
-        return None
-
-    # Resize to fit within max bounds, preserving aspect ratio
-    scale_w = CHART_MAX_WIDTH / img.width if img.width > CHART_MAX_WIDTH else 1.0
-    scale_h = CHART_MAX_HEIGHT / img.height if img.height > CHART_MAX_HEIGHT else 1.0
-    scale = min(scale_w, scale_h)
-
-    if scale < 1.0:
-        new_w = int(img.width * scale)
-        new_h = int(img.height * scale)
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-        print(f"[CHART] Resized to {new_w}x{new_h} (scale={scale:.2f})")
-    else:
-        print(f"[CHART] No resize needed ({img.width}x{img.height})")
-
-    # Apply rounded corners
-    corner_radius = 24
-    mask = Image.new("L", img.size, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle([(0, 0), img.size], radius=corner_radius, fill=255)
-    img.putalpha(mask)
-
-    # Save processed chart to tmp/ for debug inspection
-    Path("tmp").mkdir(exist_ok=True)
-    debug_path = "tmp/_chart_processed.png"
-    img.save(debug_path, "PNG")
-    print(f"[CHART] Debug image saved to {debug_path}")
-
-    # Duration defaults to full video
-    if duration_s is None:
-        duration_s = total_duration_s - start_s - 0.5
-    duration_s = min(duration_s, total_duration_s - start_s - 0.1)
-    if duration_s <= 0:
-        print(f"[CHART] Duration <= 0 after clamping, skipping")
-        return None
-
-    # Position: centred horizontally, bottom third of safe zone
-    # Safe zone bottom = CANVAS_HEIGHT - CAPTION_ZONE = 1720
-    # Bottom third starts at ~1147px, centre the chart in that region
-    safe_zone_bottom = CANVAS_HEIGHT - CAPTION_ZONE
-    bottom_third_top = int(safe_zone_bottom * 2 / 3)  # ~1147
-    chart_y = bottom_third_top + (safe_zone_bottom - bottom_third_top - img.height) // 2
-    # Clamp so chart doesn't spill into caption zone
-    chart_y = min(chart_y, safe_zone_bottom - img.height - 10)
-    chart_y = max(chart_y, bottom_third_top)
-
-    print(f"[CHART] Position: center, y={chart_y}")
-    print(f"[CHART] Timing: start={start_s:.1f}s, duration={duration_s:.1f}s")
-
-    clip = (
-        ImageClip(debug_path)
-        .with_start(start_s)
-        .with_duration(duration_s)
-        .with_position(("center", chart_y))
-        .with_effects([
-            vfx.CrossFadeIn(CHART_FADE_IN),
-            vfx.CrossFadeOut(CHART_FADE_OUT),
-        ])
-    )
-
-    logger.info(
-        "Chart clip '%s' at %.1fs–%.1fs, y=%d",
-        fpath.name, start_s, start_s + duration_s, chart_y,
-    )
-    return clip
-
-
 def composite_video(background_path: str, audio_path: str,
                     overlay_sequence: list[dict], output_path: str,
                     darken: bool = True,
                     accent_text_clips: list | None = None,
-                    title_clip: ImageClip | None = None,
-                    chart_clip: ImageClip | None = None) -> str:
+                    title_clip: ImageClip | None = None) -> str:
     """Composite overlays and audio onto the background video using MoviePy.
 
     Each overlay is an independent ImageClip layer with its own start time,
@@ -963,14 +850,7 @@ def composite_video(background_path: str, audio_path: str,
             )
 
     # ------------------------------------------------------------------
-    # Add chart overlay (above image overlays)
-    # ------------------------------------------------------------------
-    if chart_clip is not None:
-        print("[COMPOSITE] Adding chart clip")
-        clips.append(chart_clip)
-
-    # ------------------------------------------------------------------
-    # Add title overlay (above chart, below accent text)
+    # Add title overlay (above accent text)
     # ------------------------------------------------------------------
     if title_clip is not None:
         print("[COMPOSITE] Adding title clip")
@@ -1051,7 +931,6 @@ def composite_video(background_path: str, audio_path: str,
         "overlay_timings": overlay_details,
         "darken": darken,
         "title_overlay": title_clip is not None,
-        "chart_overlay": chart_clip is not None,
         "warnings": warnings,
         "success": True,
     }
