@@ -5,7 +5,10 @@ import time
 from pathlib import Path
 
 import requests
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFile, ImageFilter
+
+# Allow PIL to load truncated/incomplete images instead of raising OSError
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 MAX_RETRIES = 2
 PEXELS_BASE_URL = "https://api.pexels.com/v1/search"
@@ -76,6 +79,13 @@ def download_image(url: str, dest_dir: str | None = None) -> str | None:
             )
             tmp_file.write(resp.content)
             tmp_file.close()
+            # Validate the downloaded image can be opened by PIL
+            try:
+                with Image.open(tmp_file.name) as test_img:
+                    test_img.load()
+            except Exception:
+                Path(tmp_file.name).unlink(missing_ok=True)
+                raise requests.RequestException("Downloaded image is corrupt")
             return tmp_file.name
         except requests.RequestException:
             if attempt == MAX_RETRIES:

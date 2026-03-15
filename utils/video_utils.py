@@ -9,7 +9,10 @@ from pathlib import Path
 
 import logging
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFile, ImageFont
+
+# Allow PIL to load truncated/incomplete images instead of raising OSError
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
