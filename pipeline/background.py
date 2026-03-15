@@ -44,12 +44,6 @@ def search_pexels_videos(query: str, per_page: int = 15) -> list[dict]:
     Returns:
         List of dicts with keys: id, image (preview), duration, video_files.
     """
-    auth = pexels.headers.get("Authorization", "")
-    if not auth:
-        raise RuntimeError(
-            "Pexels API key is not configured. "
-            "Add PEXELS_API_KEY to your .env file or .streamlit/secrets.toml."
-        )
     for attempt in range(MAX_RETRIES + 1):
         try:
             resp = pexels.get(PEXELS_VIDEO_URL, params={
@@ -211,12 +205,6 @@ def _generate_ai_background(state: dict) -> str:
 
 def _fetch_stock_broll(state: dict) -> str:
     """Fetch stock video from Pexels, crop to vertical. Returns video path."""
-    auth = pexels.headers.get("Authorization", "")
-    if not auth:
-        raise RuntimeError(
-            "Pexels API key is not configured. "
-            "Add PEXELS_API_KEY to your .env file or .streamlit/secrets.toml."
-        )
     rec = state.get("background_recommendation") or {}
     queries = rec.get("pexels_queries", ["finance technology"])
     duration = state.get("estimated_duration_s", 60)
