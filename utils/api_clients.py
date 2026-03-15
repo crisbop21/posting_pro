@@ -42,8 +42,23 @@ ELEVENLABS_VOICE_ID = _get_secret("ELEVENLABS_VOICE_ID")
 # --- Pexels (REST, no SDK) ---
 import requests  # noqa: E402
 
-pexels = requests.Session()
-pexels.headers.update({"Authorization": _get_secret("PEXELS_API_KEY")})
+
+class _PexelsSession(requests.Session):
+    """A requests.Session that sets the Pexels Authorization header lazily.
+
+    This avoids the problem where the header is baked in at import time
+    before Streamlit secrets are fully available.
+    """
+
+    def request(self, method, url, **kwargs):
+        if not self.headers.get("Authorization"):
+            key = _get_secret("PEXELS_API_KEY")
+            if key:
+                self.headers["Authorization"] = key
+        return super().request(method, url, **kwargs)
+
+
+pexels = _PexelsSession()
 
 # --- Marketaux (REST) ---
 MARKETAUX_API_KEY = _get_secret("MARKETAUX_API_KEY")
