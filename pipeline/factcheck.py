@@ -97,11 +97,18 @@ def run(state: dict) -> dict:
         try:
             response = claude.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=2000,
+                max_tokens=8000,
                 system=skill,
                 messages=[{"role": "user", "content": input_text}],
             )
             raw_response = response.content[0].text
+
+            if response.stop_reason == "max_tokens":
+                raise RuntimeError(
+                    "Response was truncated — the input may be too long. "
+                    "Try shortening the source data and retrying."
+                )
+
             result = _parse_response(raw_response)
 
             state["factcheck_flags"] = result.get("flags", [])
