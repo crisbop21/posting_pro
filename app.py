@@ -10,6 +10,7 @@ from utils.state import DEFAULT_STATE, init_state
 from utils.styles import BACKGROUND_MODES, VISUAL_STYLES
 from utils.demo import load_demo
 from utils.ui_components import (
+    _set_state,
     approval_bar,
     beat_map_editor,
     demo_badge,
@@ -672,15 +673,22 @@ else:
             _result = st.session_state.get("_assembly_result", {})
             if _result.get("done"):
                 st.session_state["assembly_running"] = False
+                st.session_state["assembly_started_at"] = None
                 if _result.get("error"):
                     err_msg = _result["error"]
                     st.error("Assembly failed. Click **Assemble Video** to try again.")
                     with st.expander("Error details", expanded=True):
                         st.code(err_msg, language="text")
                 elif _result.get("state"):
-                    # Copy results from the thread's snapshot back into session state
+                    # Copy results from the thread's snapshot back into session state,
+                    # but skip assembly tracking keys to avoid overwriting the
+                    # reset we just did above.
+                    _assembly_tracking_keys = {
+                        "assembly_running", "assembly_done", "assembly_error",
+                        "assembly_started_at", "assembly_gen_id",
+                    }
                     for k, v in _result["state"].items():
-                        if k in DEFAULT_STATE:
+                        if k in DEFAULT_STATE and k not in _assembly_tracking_keys:
                             st.session_state[k] = v
                     st.rerun()
                 else:
@@ -705,56 +713,51 @@ else:
             _col_run6, _col_demo6 = st.columns([1, 1])
             with _col_run6:
                 if st.button("Assemble Video", key="btn_assemble", type="primary"):
-                    gen_id = st.session_state.get("assembly_gen_id", 0) + 1
-                    st.session_state["assembly_gen_id"] = gen_id
-                    st.session_state["assembly_running"] = True
-                    st.session_state["assembly_done"] = False
-                    st.session_state["assembly_error"] = None
-                    st.session_state["assembly_started_at"] = time.time()
+                    _setup_ok = False
+                    try:
+                        gen_id = st.session_state.get("assembly_gen_id", 0) + 1
+                        st.session_state["assembly_gen_id"] = gen_id
+                        st.session_state["assembly_running"] = True
+                        st.session_state["assembly_done"] = False
+                        st.session_state["assembly_error"] = None
+                        st.session_state["assembly_started_at"] = time.time()
 
-                    # --- Option A: snapshot state on the MAIN thread ---
-                    state_snapshot = {k: st.session_state[k] for k in st.session_state}
+                        state_snapshot = {k: st.session_state[k] for k in st.session_state}
 
-                    # Diagnostic: confirm snapshot has required keys
-                    print(f"[ASSEMBLE] Snapshot keys: {len(state_snapshot)}")
-                    print(f"[ASSEMBLE] background_video_path: {state_snapshot.get('background_video_path')}")
-                    print(f"[ASSEMBLE] script length: {len(state_snapshot.get('script') or '')}")
-                    print(f"[ASSEMBLE] overlay_sequence count: {len(state_snapshot.get('overlay_sequence', []))}")
-                    print(f"[ASSEMBLE] title_enabled: {state_snapshot.get('title_enabled')}")
-                    print(f"[ASSEMBLE] title_text: '{state_snapshot.get('title_text')}'")
-                    print(f"[ASSEMBLE] chk_title_enabled: {state_snapshot.get('chk_title_enabled')}")
-                    print(f"[ASSEMBLE] input_title_text: '{state_snapshot.get('input_title_text')}'")
+                        # Shared result dict — thread writes here, main thread reads
+                        _result = {"done": False, "error": None, "state": None}
 
+                        def _assemble_in_background(_snapshot=state_snapshot, _res=_result):
+                            import traceback as _tb
+                            try:
+                                from pipeline.assemble import run as assemble_run
 
-                    # Shared result dict — thread writes here, main thread reads
-                    _result = {"done": False, "error": None, "state": None}
+                                print("[ASSEMBLE-THREAD] Starting assembly run...")
+                                updated = assemble_run(_snapshot)
+                                print(f"[ASSEMBLE-THREAD] Done. final_video_path={updated.get('final_video_path')}")
+                                _res["state"] = updated
+                            except Exception as e:
+                                full_tb = _tb.format_exc()
+                                print(f"[ASSEMBLE-THREAD] ERROR: {e}")
+                                print(f"[ASSEMBLE-THREAD] TRACEBACK:\n{full_tb}")
+                                _res["error"] = f"{e}\n\nTraceback:\n{full_tb}"
+                            finally:
+                                _res["done"] = True
 
-                    def _assemble_in_background(_snapshot=state_snapshot, _res=_result):
-                        import traceback as _tb
-                        try:
-                            from pipeline.assemble import run as assemble_run
-
-                            print("[ASSEMBLE-THREAD] Starting assembly run...")
-                            updated = assemble_run(_snapshot)
-                            print(f"[ASSEMBLE-THREAD] Done. final_video_path={updated.get('final_video_path')}")
-                            _res["state"] = updated
-                        except Exception as e:
-                            full_tb = _tb.format_exc()
-                            print(f"[ASSEMBLE-THREAD] ERROR: {e}")
-                            print(f"[ASSEMBLE-THREAD] TRACEBACK:\n{full_tb}")
-                            _res["error"] = f"{e}\n\nTraceback:\n{full_tb}"
-                        finally:
-                            _res["done"] = True
-                            print(f"[ASSEMBLE-THREAD] Thread finished. "
-                                  f"done={_res['done']}, "
-                                  f"error={'YES' if _res['error'] else 'no'}, "
-                                  f"has_state={'YES' if _res.get('state') else 'no'}")
-
-                    thread = threading.Thread(target=_assemble_in_background, daemon=True)
-                    # Stash result dict in session state so the polling loop can read it
-                    st.session_state["_assembly_result"] = _result
-                    thread.start()
-                    st.rerun()
+                        thread = threading.Thread(target=_assemble_in_background, daemon=True)
+                        st.session_state["_assembly_result"] = _result
+                        thread.start()
+                        _setup_ok = True
+                    except Exception as e:
+                        st.session_state["assembly_running"] = False
+                        st.session_state["assembly_started_at"] = None
+                        msg = str(e).rstrip(". ")
+                        st.error(
+                            f"Could not start video assembly: {msg}. "
+                            "Click **Assemble Video** to try again."
+                        )
+                    if _setup_ok:
+                        st.rerun()
             with _col_demo6:
                 if st.button("Use Demo Output", key="btn_demo_6"):
                     _apply_demo(6)
@@ -833,7 +836,32 @@ else:
             demo_badge(6)
 
         if not st.session_state["step6_approved"]:
-            approval_bar("step6_approved", "Approve video & continue")
+            # Custom approval bar for Step 6: "Reassemble" resets assembly
+            # output so the user can return to the Assemble Video button.
+            col_approve, col_reassemble = st.columns([1, 1])
+            with col_approve:
+                st.button(
+                    "✓ Approve video & continue",
+                    key="approve_step6_approved",
+                    type="primary",
+                    on_click=_set_state,
+                    args=("step6_approved", True),
+                )
+            with col_reassemble:
+                def _reassemble_step6():
+                    st.session_state["step6_approved"] = False
+                    st.session_state["final_video_path"] = None
+                    st.session_state["assembly_diagnostics"] = None
+                    st.session_state["assembly_running"] = False
+                    st.session_state["assembly_done"] = False
+                    st.session_state["assembly_error"] = None
+                    st.session_state["assembly_started_at"] = None
+
+                st.button(
+                    "↻ Reassemble",
+                    key="regen_step6_approved",
+                    on_click=_reassemble_step6,
+                )
         else:
             st.success("Step 6 approved.")
 
