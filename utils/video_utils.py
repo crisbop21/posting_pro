@@ -552,10 +552,159 @@ def build_accent_overlay_clips(
     return clips
 
 
+# ---------------------------------------------------------------------------
+# Title text rendering (PIL-based → ImageClip)
+# ---------------------------------------------------------------------------
+
+TITLE_FONT_SIZE = 80
+TITLE_MAX_WIDTH = 900  # max text block width (px)
+TITLE_PADDING_X = 60
+TITLE_PADDING_Y = 40
+TITLE_BG_ALPHA = 160  # background pill opacity
+TITLE_DEFAULT_DURATION = 4.0  # seconds on screen
+
+
+def render_title_image(
+    text: str,
+    font_color: str = "#FFFFFF",
+    bg_color: tuple = (10, 10, 20),
+    output_path: str | None = None,
+) -> str:
+    """Render a title card as a transparent PNG with a pill background.
+
+    The title is drawn in the chosen colour on a semi-transparent dark pill,
+    centred for compositing onto the video canvas.
+
+    Args:
+        text: The title string to render.
+        font_color: Hex colour for the title text.
+        bg_color: RGB tuple for the pill background.
+        output_path: Where to save the PNG.  Auto-generated if None.
+
+    Returns:
+        Path to the rendered PNG image.
+    """
+    font = _load_font(TITLE_FONT_SIZE, bold=True)
+
+    # Measure text bounding box
+    dummy = Image.new("RGBA", (1, 1))
+    draw = ImageDraw.Draw(dummy)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    # Word-wrap if text is too wide
+    if text_w > TITLE_MAX_WIDTH:
+        words = text.split()
+        lines: list[str] = []
+        current_line = ""
+        for word in words:
+            test = f"{current_line} {word}".strip()
+            test_bbox = draw.textbbox((0, 0), test, font=font)
+            if test_bbox[2] - test_bbox[0] <= TITLE_MAX_WIDTH:
+                current_line = test
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        wrapped_text = "\n".join(lines)
+
+        # Re-measure
+        bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+    else:
+        wrapped_text = text
+
+    # Create image with padding (pill shape)
+    img_w = text_w + TITLE_PADDING_X * 2
+    img_h = text_h + TITLE_PADDING_Y * 2
+    img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Draw rounded rectangle background
+    pill_radius = min(28, img_h // 2)
+    draw.rounded_rectangle(
+        [(0, 0), (img_w - 1, img_h - 1)],
+        radius=pill_radius,
+        fill=(*bg_color, TITLE_BG_ALPHA),
+    )
+
+    # Draw text
+    draw.multiline_text(
+        (TITLE_PADDING_X, TITLE_PADDING_Y),
+        wrapped_text,
+        font=font,
+        fill=font_color,
+        align="center",
+    )
+
+    if output_path is None:
+        Path("tmp").mkdir(exist_ok=True)
+        output_path = tempfile.mktemp(suffix="_title.png", dir="tmp")
+
+    img.save(output_path, "PNG")
+    return output_path
+
+
+def build_title_clip(
+    title_text: str,
+    total_duration_s: float,
+    font_color: str = "#FFFFFF",
+    duration_s: float = TITLE_DEFAULT_DURATION,
+) -> ImageClip | None:
+    """Create a timed ImageClip title overlay for the video intro.
+
+    The title appears centred in the upper third of the safe zone,
+    fades in and out, and displays for the given duration starting at
+    the beginning of the video.
+
+    Args:
+        title_text: The title string to display.
+        total_duration_s: Master video duration (used to clamp).
+        font_color: Hex colour for the title text.
+        duration_s: How long the title stays on screen.
+
+    Returns:
+        A MoviePy ImageClip positioned and timed, or None if title_text
+        is empty.
+    """
+    if not title_text or not title_text.strip():
+        return None
+
+    duration_s = min(duration_s, total_duration_s - 0.5)
+    if duration_s <= 0:
+        return None
+
+    img_path = render_title_image(text=title_text.strip(), font_color=font_color)
+
+    # Position: centred horizontally, upper third of the safe zone
+    # Safe zone = top to (CANVAS_HEIGHT - CAPTION_ZONE)
+    safe_zone_h = CANVAS_HEIGHT - CAPTION_ZONE
+    title_y = int(safe_zone_h * 0.18)  # ~18% down from top
+
+    clip = (
+        ImageClip(img_path)
+        .with_start(0.3)  # slight delay after video start
+        .with_duration(duration_s)
+        .with_position(("center", title_y))
+        .with_effects([
+            vfx.CrossFadeIn(0.5),
+            vfx.CrossFadeOut(0.4),
+        ])
+    )
+
+    logger.info("Title clip '%s' at 0.3s–%.1fs", title_text, 0.3 + duration_s)
+    return clip
+
+
 def composite_video(background_path: str, audio_path: str,
                     overlay_sequence: list[dict], output_path: str,
                     darken: bool = True,
-                    accent_text_clips: list | None = None) -> str:
+                    accent_text_clips: list | None = None,
+                    title_clip: ImageClip | None = None) -> str:
     """Composite overlays and audio onto the background video using MoviePy.
 
     Each overlay is an independent ImageClip layer with its own start time,
@@ -699,6 +848,13 @@ def composite_video(background_path: str, audio_path: str,
                 f"Overlays #{i} and #{i+1} overlap: "
                 f"#{i} ends at {prev_end:.2f}s, #{i+1} starts at {curr_start:.2f}s"
             )
+
+    # ------------------------------------------------------------------
+    # Add title overlay (above image overlays, below accent text)
+    # ------------------------------------------------------------------
+    if title_clip is not None:
+        print("[COMPOSITE] Adding title clip")
+        clips.append(title_clip)
 
     # ------------------------------------------------------------------
     # Add accent text overlays (highest z-order — on top of everything)

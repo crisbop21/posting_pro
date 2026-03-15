@@ -50,6 +50,17 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - **Z-order**: Accent text is composited on top of all other layers (background, image overlays).
 - Accent overlays are stripped from the voiceover text before TTS generation — they are visual-only.
 
+## Title text overlay
+
+- An optional **title card** is rendered as the topmost text layer during the video intro.
+- The title is drawn in white (default) on a semi-transparent dark pill background (rounded rectangle, ~63% opacity).
+- Font: bold sans-serif, 80 px. Text wraps at 900 px max width.
+- **Position**: Centred horizontally, placed at ~18% from the top of the safe zone (above the caption area).
+- **Timing**: Appears at 0.3 seconds, displays for ~4 seconds by default.
+- **Fade in**: 0.5 seconds. **Fade out**: 0.4 seconds.
+- **Z-order**: Above image overlays, below accent text overlays.
+- The title text is user-editable and auto-populated from the topic. It can be disabled entirely.
+
 ## Audio
 
 - Voiceover audio track from ElevenLabs is the master clock.

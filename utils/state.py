@@ -42,6 +42,8 @@ DEFAULT_STATE = {
     "accent_color": None,         # hex color for accent text (auto from visual style, or user override)
 
     # Step 6 — Video assembly
+    "title_text": "",              # title overlay text (auto-generated or user-edited)
+    "title_enabled": True,         # whether to render the title overlay
     "final_video_path": None,
 
     # Assembly diagnostics (populated after video render)

@@ -540,7 +540,7 @@ else:
         for i, img_path in enumerate(overlays):
             with cols[i % len(cols)]:
                 if Path(img_path).exists():
-                    st.image(img_path, caption=f"Overlay {i + 1}", width="stretch")
+                    st.image(img_path, caption=f"Overlay {i + 1}", use_container_width=True)
 
                     # Per-slot DALL-E swap button
                     if st.button(f"Swap #{i + 1} with DALL-E", key=f"swap_dalle_{i}"):
@@ -573,6 +573,33 @@ if not st.session_state["step5_approved"]:
     locked_step(6, "Assemble Video")
 else:
     step_card(6, "Assemble Video", "Generate voiceover and composite the final video.")
+
+    # --- Title overlay controls ---
+    st.subheader("Title Overlay")
+
+    # Auto-populate title from topic if empty
+    if not st.session_state.get("title_text"):
+        topic = st.session_state.get("custom_topic", "")
+        if topic:
+            st.session_state["title_text"] = topic.strip().title()
+
+    title_enabled = st.checkbox(
+        "Show title text on video",
+        value=st.session_state.get("title_enabled", True),
+        key="chk_title_enabled",
+    )
+    st.session_state["title_enabled"] = title_enabled
+
+    if title_enabled:
+        title_text = st.text_input(
+            "Title text",
+            value=st.session_state.get("title_text", ""),
+            placeholder="e.g. Fed Cuts Rates Again",
+            key="input_title_text",
+        )
+        st.session_state["title_text"] = title_text
+
+    st.divider()
 
     # Maximum time (seconds) before we consider assembly stuck
     ASSEMBLY_TIMEOUT_S = 900  # 15 minutes — MoviePy composites frame-by-frame
