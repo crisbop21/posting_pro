@@ -675,10 +675,7 @@ else:
                 st.session_state["assembly_running"] = False
                 st.session_state["assembly_started_at"] = None
                 if _result.get("error"):
-                    err_msg = _result["error"]
-                    st.error("Assembly failed. Click **Assemble Video** to try again.")
-                    with st.expander("Error details", expanded=True):
-                        st.code(err_msg, language="text")
+                    st.session_state["assembly_error"] = _result["error"]
                 elif _result.get("state"):
                     # Copy results from the thread's snapshot back into session state,
                     # but skip assembly tracking keys to avoid overwriting the
@@ -690,26 +687,32 @@ else:
                     for k, v in _result["state"].items():
                         if k in DEFAULT_STATE and k not in _assembly_tracking_keys:
                             st.session_state[k] = v
-                    st.rerun()
                 else:
-                    st.error(
-                        "Assembly finished but produced no output. "
-                        "Click **Assemble Video** to try again."
+                    st.session_state["assembly_error"] = (
+                        "Assembly finished but produced no output."
                     )
+                st.rerun()
             elif started and (time.time() - started) > ASSEMBLY_TIMEOUT_S:
                 st.session_state["assembly_running"] = False
+                st.session_state["assembly_error"] = (
+                    "Video assembly timed out after 15 minutes. "
+                    "This may indicate a problem with the inputs."
+                )
                 st.session_state["assembly_gen_id"] = (
                     st.session_state.get("assembly_gen_id", 0) + 1
                 )
-                st.error(
-                    "Video assembly timed out after 15 minutes. "
-                    "This may indicate a problem with the inputs. "
-                    "Click **Assemble Video** to try again."
-                )
+                st.rerun()
             else:
                 time.sleep(2)
                 st.rerun()
         else:
+            # Show persisted error from a previous failed attempt
+            _prev_err = st.session_state.get("assembly_error")
+            if _prev_err:
+                st.error("Assembly failed. Click **Assemble Video** to try again.")
+                with st.expander("Error details"):
+                    st.code(_prev_err, language="text")
+
             _col_run6, _col_demo6 = st.columns([1, 1])
             with _col_run6:
                 if st.button("Assemble Video", key="btn_assemble", type="primary"):
