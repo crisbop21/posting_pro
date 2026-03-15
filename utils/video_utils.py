@@ -930,6 +930,7 @@ def composite_video(background_path: str, audio_path: str,
         },
         "overlay_timings": overlay_details,
         "darken": darken,
+        "title_overlay": title_clip is not None,
         "warnings": warnings,
         "success": True,
     }
