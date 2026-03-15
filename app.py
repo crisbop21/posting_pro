@@ -587,24 +587,25 @@ else:
                                     st.error("Could not generate a replacement image.")
 
                     # Per-slot upload replacement
-                    upload_version = st.session_state.get(f"_upload_ver_{i}", 0)
                     replacement = st.file_uploader(
                         f"Replace #{i + 1}",
                         type=["png", "jpg", "jpeg", "webp"],
-                        key=f"upload_replace_{i}_{upload_version}",
+                        key=f"upload_replace_{i}",
                         label_visibility="collapsed",
                     )
                     if replacement is not None:
-                        from utils.image_utils import process_overlay
+                        upload_sig = f"{replacement.name}_{replacement.size}"
+                        if st.session_state.get(f"_processed_upload_{i}") != upload_sig:
+                            from utils.image_utils import process_overlay
 
-                        Path("tmp").mkdir(exist_ok=True)
-                        save_path = f"tmp/replace_overlay_{i}_{replacement.name}"
-                        with open(save_path, "wb") as f:
-                            f.write(replacement.getbuffer())
-                        processed = process_overlay(save_path)
-                        st.session_state["overlay_sequence"][i] = processed
-                        st.session_state[f"_upload_ver_{i}"] = upload_version + 1
-                        st.rerun()
+                            Path("tmp").mkdir(exist_ok=True)
+                            save_path = f"tmp/replace_overlay_{i}_{replacement.name}"
+                            with open(save_path, "wb") as f:
+                                f.write(replacement.getbuffer())
+                            processed = process_overlay(save_path)
+                            st.session_state["overlay_sequence"][i] = processed
+                            st.session_state[f"_processed_upload_{i}"] = upload_sig
+                            st.rerun()
 
         if st.session_state.get("step5_demo"):
             demo_badge(5)
