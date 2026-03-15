@@ -741,6 +741,21 @@ else:
         video_path = st.session_state["final_video_path"]
         if Path(video_path).exists():
             st.video(video_path)
+
+            # --- Frame preview: extract a still at ~1s for quick verification ---
+            preview_path = "tmp/_preview_frame.png"
+            try:
+                import subprocess
+                subprocess.run(
+                    ["ffmpeg", "-y", "-ss", "1", "-i", video_path,
+                     "-frames:v", "1", "-q:v", "2", preview_path],
+                    capture_output=True, timeout=10,
+                )
+                if Path(preview_path).exists():
+                    with st.expander("Frame Preview (1s mark)", expanded=True):
+                        st.image(preview_path, caption="Composite at t=1s — verify title, chart, and overlays are visible", use_container_width=True)
+            except Exception:
+                pass  # non-critical — skip silently
         else:
             st.warning("Video file not found. You may need to reassemble.")
 
@@ -775,6 +790,10 @@ else:
                 st.text(f"  Darken:     {diag.get('darken', '?')}")
                 st.text(f"  Title:      {'Yes' if diag.get('title_overlay') else 'No'}")
                 st.text(f"  Chart:      {'Yes' if diag.get('chart_overlay') else 'No'}")
+
+                # Show processed chart debug image if it exists
+                if diag.get("chart_overlay") and Path("tmp/_chart_processed.png").exists():
+                    st.image("tmp/_chart_processed.png", caption="Processed chart input (from tmp/)", width=300)
 
                 # Overlay timing table
                 timings = diag.get("overlay_timings", [])
