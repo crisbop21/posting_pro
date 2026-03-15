@@ -193,6 +193,7 @@ def load_demo_step5() -> dict:
     overlays = _ensure_placeholder_overlays()
     return {
         "overlay_sequence": overlays,
+        "overlay_sources": ["pexels"] * len(overlays),
         "step5_demo": True,
     }
 

@@ -1,4 +1,4 @@
-"""Step 5: Image sourcing from Pexels with optional DALL-E swap."""
+"""Step 5: Image sourcing — Pexels web images by default."""
 
 import re
 import time
@@ -39,8 +39,21 @@ def _generate_search_query(description: str) -> str:
     return " ".join(description.split()[:4])
 
 
+def _search_pexels_for_marker(description: str) -> str | None:
+    """Search Pexels for a single image marker and return a processed path."""
+    query = _generate_search_query(description)
+    _ensure_pexels_auth()
+    results = search_pexels(pexels, query)
+
+    if results:
+        downloaded = download_image(results[0]["url"])
+        if downloaded:
+            return process_overlay(downloaded)
+    return None
+
+
 def _generate_dalle_image(description: str) -> str | None:
-    """Generate a fallback image with DALL-E when Pexels has no results."""
+    """Generate an image with DALL-E for a given description."""
     for attempt in range(MAX_RETRIES + 1):
         try:
             response = openai_client.images.generate(
@@ -68,11 +81,14 @@ def _generate_dalle_image(description: str) -> str | None:
 def run(state: dict) -> dict:
     """Execute Step 5: source overlay images for each script segment.
 
+    Uses Pexels web search as the default source. Each slot can later
+    be individually swapped with DALL-E or an uploaded image via the UI.
+
     Args:
         state: Current session state dict with script populated.
 
     Returns:
-        Updated state with overlay_sequence (list of image paths).
+        Updated state with overlay_sequence and overlay_sources.
     """
     script = state.get("script")
     if not script:
@@ -82,29 +98,23 @@ def run(state: dict) -> dict:
     if not markers:
         st.warning("No [IMAGE:] markers found in the script. Skipping image sourcing.")
         state["overlay_sequence"] = []
+        state["overlay_sources"] = []
         return state
 
     overlay_sequence = []
+    overlay_sources = []
 
     for description in markers:
-        query = _generate_search_query(description)
-        _ensure_pexels_auth()
-        results = search_pexels(pexels, query)
-
-        if results:
-            # Download the first result and process it
-            downloaded = download_image(results[0]["url"])
-            if downloaded:
-                processed = process_overlay(downloaded)
-                overlay_sequence.append(processed)
-                continue
-
-        # Fallback to DALL-E if Pexels returns nothing usable
-        dalle_path = _generate_dalle_image(description)
-        if dalle_path:
-            overlay_sequence.append(dalle_path)
+        path = _search_pexels_for_marker(description)
+        if path:
+            overlay_sequence.append(path)
+            overlay_sources.append("pexels")
         else:
-            st.warning(f"Could not source an image for: {description}")
+            # Placeholder — slot exists but no image found
+            overlay_sequence.append("")
+            overlay_sources.append("missing")
+            st.warning(f"No web image found for: {description}")
 
     state["overlay_sequence"] = overlay_sequence
+    state["overlay_sources"] = overlay_sources
     return state
