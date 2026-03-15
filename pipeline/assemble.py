@@ -11,6 +11,7 @@ from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
 from utils.styles import VISUAL_STYLES
 from utils.video_utils import (
     build_accent_overlay_clips,
+    build_chart_clip,
     build_title_clip,
     composite_video,
     generate_slug,
@@ -248,6 +249,22 @@ def run(state: dict) -> dict:
     else:
         print("[ASSEMBLE] Title overlay disabled or empty")
 
+    # Build chart overlay clip if a chart image was uploaded
+    chart_clip_obj = None
+    chart_path = state.get("chart_image_path")
+    if chart_path:
+        print(f"[ASSEMBLE] Chart image path: {chart_path}")
+        chart_clip_obj = build_chart_clip(
+            image_path=chart_path,
+            total_duration_s=duration,
+        )
+        if chart_clip_obj:
+            print(f"[ASSEMBLE] Chart clip built from '{chart_path}'")
+        else:
+            print("[ASSEMBLE] Chart clip returned None (check [CHART] logs above)")
+    else:
+        print("[ASSEMBLE] No chart image uploaded")
+
     # Composite the final video
     print(f"[ASSEMBLE] Compositing video to {output_path}...")
     for attempt in range(MAX_RETRIES + 1):
@@ -259,6 +276,7 @@ def run(state: dict) -> dict:
                 output_path=output_path,
                 accent_text_clips=accent_clips,
                 title_clip=title_clip_obj,
+                chart_clip=chart_clip_obj,
             )
             print(f"[ASSEMBLE] Video composited successfully: {output_path}")
             state["final_video_path"] = output_path
