@@ -588,7 +588,7 @@ else:
                                     if new_path:
                                         st.session_state["overlay_sequence"][i] = new_path
                                         st.session_state["overlay_sources"][i] = "pexels"
-                                        st.session_state[f"swap_choice_{i}"] = "—"
+                                        del st.session_state[f"swap_choice_{i}"]
                                         st.rerun()
                                     else:
                                         st.error("No results. Try a different query.")
@@ -606,7 +606,7 @@ else:
                                     if new_path:
                                         st.session_state["overlay_sequence"][i] = new_path
                                         st.session_state["overlay_sources"][i] = "dalle"
-                                        st.session_state[f"swap_choice_{i}"] = "—"
+                                        del st.session_state[f"swap_choice_{i}"]
                                         st.rerun()
                                     else:
                                         st.error("DALL-E generation failed.")
@@ -634,7 +634,7 @@ else:
                         st.session_state["overlay_sources"][i] = "upload"
                         # Reset swap UI to avoid widget conflicts on future reruns
                         del st.session_state[f"upload_replace_{i}"]
-                        st.session_state[f"swap_choice_{i}"] = "—"
+                        del st.session_state[f"swap_choice_{i}"]
                         st.rerun()
 
         if st.session_state.get("step5_demo"):
