@@ -227,10 +227,16 @@ def run(state: dict) -> dict:
         accent_color = style_def.get("accent_color", DEFAULT_ACCENT_COLOR)
     print(f"[ASSEMBLE] Accent color: {accent_color}")
 
+    # Pass overlay timings so accent clips fill visual gaps
+    overlay_timings_for_accents = [
+        {"start_s": ov["start_s"], "duration_s": ov["duration_s"]}
+        for ov in overlay_sequence
+    ]
     accent_clips = build_accent_overlay_clips(
         script=script,
         total_duration_s=duration,
         accent_color=accent_color,
+        overlay_timings=overlay_timings_for_accents,
     )
     print(f"[ASSEMBLE] Built {len(accent_clips)} accent text clips")
 
