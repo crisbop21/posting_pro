@@ -938,8 +938,8 @@ def composite_video(background_path: str, audio_path: str,
 
     clips = [bg_clip]
 
-    # Vertical centre of the safe zone (above the 300 px caption area)
-    safe_zone_centre_y = (CANVAS_HEIGHT - CAPTION_ZONE) // 2
+    # Safe zone spans from top of canvas to CAPTION_ZONE above the bottom
+    safe_zone_height = CANVAS_HEIGHT - CAPTION_ZONE  # 1620 px
 
     overlay_details = []
     for i, ov in enumerate(overlay_sequence):
@@ -974,11 +974,18 @@ def composite_video(background_path: str, audio_path: str,
             if fade_in > 0:
                 effects.insert(0, vfx.CrossFadeIn(fade_in))
 
+            # Centre the overlay vertically in the safe zone based on
+            # its actual height so images of any size are properly placed.
+            _img_for_size = Image.open(ov["image_path"])
+            _img_h = _img_for_size.height
+            _img_for_size.close()
+            overlay_y = max(0, (safe_zone_height - _img_h) // 2)
+
             img_clip = (
                 ImageClip(ov["image_path"])
                 .with_start(start)
                 .with_duration(duration)
-                .with_position(("center", safe_zone_centre_y))
+                .with_position(("center", overlay_y))
                 .with_effects(effects)
             )
             clips.append(img_clip)

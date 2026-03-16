@@ -100,6 +100,7 @@ def download_image(url: str, dest_dir: str | None = None) -> str | None:
 
 
 def process_overlay(image_path: str, max_width: int = 918,
+                    max_height: int = 800,
                     corner_radius: int = 24, shadow_offset: int = 8) -> str:
     """Apply rounded corners and drop shadow to an overlay image.
 
@@ -108,6 +109,7 @@ def process_overlay(image_path: str, max_width: int = 918,
     Args:
         image_path: Path to the source image.
         max_width: Maximum width in pixels (85% of 1080).
+        max_height: Maximum height in pixels (fits safe zone when centred).
         corner_radius: Radius for rounded corners.
         shadow_offset: Pixel offset for the drop shadow.
 
@@ -116,10 +118,10 @@ def process_overlay(image_path: str, max_width: int = 918,
     """
     img = Image.open(image_path).convert("RGBA")
 
-    # Resize to max_width while preserving aspect ratio
-    if img.width > max_width:
-        ratio = max_width / img.width
-        new_size = (max_width, int(img.height * ratio))
+    # Resize to fit within max_width × max_height while preserving aspect ratio
+    if img.width > max_width or img.height > max_height:
+        ratio = min(max_width / img.width, max_height / img.height)
+        new_size = (int(img.width * ratio), int(img.height * ratio))
         img = img.resize(new_size, Image.LANCZOS)
 
     # Rounded corners mask
