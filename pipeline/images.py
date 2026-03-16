@@ -11,6 +11,31 @@ from utils.image_utils import search_pexels, download_image, process_overlay
 
 MAX_RETRIES = 2
 
+# Placeholder dimensions matching composition skill constraints
+_PLACEHOLDER_W, _PLACEHOLDER_H = 918, 600
+
+
+def _generate_placeholder(description: str) -> str:
+    """Create a simple placeholder PNG for a missing image slot.
+
+    Returns the path to the saved placeholder file.
+    """
+    from PIL import Image, ImageDraw
+
+    Path("tmp").mkdir(exist_ok=True)
+    slug = re.sub(r"[^a-z0-9]+", "_", description.lower())[:30]
+    out_path = f"tmp/placeholder_{slug}.png"
+
+    img = Image.new("RGBA", (_PLACEHOLDER_W, _PLACEHOLDER_H), (40, 40, 40, 200))
+    draw = ImageDraw.Draw(img)
+    # Draw an X and label so it's obvious this is a placeholder
+    draw.line([(0, 0), (_PLACEHOLDER_W, _PLACEHOLDER_H)], fill=(255, 80, 80, 180), width=3)
+    draw.line([(_PLACEHOLDER_W, 0), (0, _PLACEHOLDER_H)], fill=(255, 80, 80, 180), width=3)
+    draw.text((_PLACEHOLDER_W // 2 - 60, _PLACEHOLDER_H // 2 - 10),
+              "MISSING IMAGE", fill=(255, 255, 255, 220))
+    img.save(out_path, "PNG")
+    return out_path
+
 
 def _extract_image_markers(script: str) -> list[str]:
     """Extract [IMAGE: description] markers from the script."""
@@ -110,10 +135,11 @@ def run(state: dict) -> dict:
             overlay_sequence.append(path)
             overlay_sources.append("pexels")
         else:
-            # Placeholder — slot exists but no image found
-            overlay_sequence.append("")
+            # Generate a placeholder image so assembly doesn't break
+            placeholder = _generate_placeholder(description)
+            overlay_sequence.append(placeholder)
             overlay_sources.append("missing")
-            st.warning(f"No web image found for: {description}")
+            st.warning(f"No web image found for: {description}. A placeholder will be used.")
 
     state["overlay_sequence"] = overlay_sequence
     state["overlay_sources"] = overlay_sources
