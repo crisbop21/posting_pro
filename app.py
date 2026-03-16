@@ -541,8 +541,8 @@ else:
             sources.append("pexels")
         st.session_state["overlay_sources"] = sources
 
-        from pipeline.images import _extract_image_markers
-        _markers = _extract_image_markers(st.session_state.get("script", ""))
+        import re as _re
+        _markers = _re.findall(r"\[IMAGE:\s*(.+?)\]", st.session_state.get("script", ""))
 
         st.write(f"{len(overlays)} overlay image(s) sourced.")
 
