@@ -99,23 +99,27 @@ def _fetch_finnhub() -> list[dict]:
 
 
 def _research_custom_topic(topic: str) -> str:
-    """Use Claude to research a custom topic and return a summary string."""
-    skill = Path("skills/script_skill.md").read_text()
-
+    """Use Claude with web search to research a custom topic."""
     for attempt in range(MAX_RETRIES + 1):
         try:
             response = claude.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=2000,
+                max_tokens=4000,
                 system=(
                     "You are a research assistant. Given a finance or AI topic, "
                     "produce a detailed factual briefing with key data points, "
                     "recent developments, and context. Include specific numbers, "
                     "dates, and sources where possible. Output plain text only."
                 ),
+                tools=[{"type": "web_search_20250305"}],
                 messages=[{"role": "user", "content": topic}],
             )
-            return response.content[0].text
+            # Extract text blocks from the response (skip web search tool-use blocks)
+            text_parts = [
+                block.text for block in response.content
+                if block.type == "text"
+            ]
+            return "\n".join(text_parts)
         except Exception:
             if attempt == MAX_RETRIES:
                 raise RuntimeError("Could not research this topic.") from None
