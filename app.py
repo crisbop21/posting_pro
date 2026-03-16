@@ -745,6 +745,12 @@ else:
                 if st.button("Assemble Video", key="btn_assemble", type="primary"):
                     _setup_ok = False
                     try:
+                        # Import the assembly module eagerly (on the main thread)
+                        # so that utils.api_clients initialisation happens here,
+                        # not inside the background thread where st.warning()
+                        # would crash.
+                        from pipeline.assemble import run as assemble_run
+
                         gen_id = st.session_state.get("assembly_gen_id", 0) + 1
                         st.session_state["assembly_gen_id"] = gen_id
                         st.session_state["assembly_running"] = True
@@ -757,13 +763,15 @@ else:
                         # Shared result dict — thread writes here, main thread reads
                         _result = {"done": False, "error": None, "state": None}
 
-                        def _assemble_in_background(_snapshot=state_snapshot, _res=_result):
+                        def _assemble_in_background(
+                            _snapshot=state_snapshot,
+                            _res=_result,
+                            _run=assemble_run,
+                        ):
                             import traceback as _tb
                             try:
-                                from pipeline.assemble import run as assemble_run
-
                                 print("[ASSEMBLE-THREAD] Starting assembly run...")
-                                updated = assemble_run(_snapshot)
+                                updated = _run(_snapshot)
                                 print(f"[ASSEMBLE-THREAD] Done. final_video_path={updated.get('final_video_path')}")
                                 _res["state"] = updated
                             except Exception as e:

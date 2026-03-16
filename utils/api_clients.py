@@ -19,7 +19,10 @@ def _get_secret(name: str) -> str:
     except (KeyError, FileNotFoundError):
         value = os.getenv(name, "")
         if not value:
-            st.warning(f"Missing secret: {name}. Some features may not work.")
+            # Use logging instead of st.warning to avoid crashes when
+            # this module is first imported from a background thread.
+            import logging as _logging
+            _logging.getLogger(__name__).warning("Missing secret: %s", name)
         return value
 
 

@@ -171,7 +171,13 @@ def _generate_ai_background(state: dict) -> str:
     """Generate background via DALL-E image + Ken Burns. Returns video path."""
     style_key = state["visual_style"]
     style = VISUAL_STYLES[style_key]
-    prompt = _generate_optimized_prompt(state, style, topic)
+    topic = state.get("custom_topic") or "finance and AI trends"
+    duration = state.get("estimated_duration_s", 60)
+    direction = _get_ken_burns_direction(state)
+
+    # Build the DALL-E prompt from the style's template
+    prompt = style.get("dalle_prompt", "Abstract financial background, 9:16 vertical")
+    prompt = prompt.replace("{topic}", topic)
 
     image_path = None
     for attempt in range(MAX_RETRIES + 1):
