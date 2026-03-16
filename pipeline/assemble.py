@@ -124,7 +124,7 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
     if overlay_count == 0:
         return []
 
-    gap = 0.5  # seconds between overlays
+    gap = 0.2  # seconds between overlays — tighter pacing for dopamine
     available = total_duration_s - (gap * (overlay_count - 1))
     per_overlay = max(4.0, min(18.0, available / overlay_count))
 

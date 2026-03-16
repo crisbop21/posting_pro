@@ -38,7 +38,7 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - **Fade out**: 0.3 seconds (linear alpha ramp from 1 to 0).
 - **Minimum on-screen duration**: 4 seconds (including fades).
 - **Maximum on-screen duration**: 18 seconds.
-- **Gap between overlays**: At least 0.5 seconds of background-only between consecutive overlays.
+- **Gap between overlays**: At least 0.2 seconds of background-only between consecutive overlays.
 - **Entrance animation**: All image overlays use a spring-physics scale entrance — starting at 95% size, overshooting to 102%, and settling to 100% over 0.5 seconds. This gives each cut a sense of intentional energy.
 
 ## Accent text overlays
@@ -46,9 +46,9 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - Key phrases marked with `**double asterisks**` in the script are rendered as accent text overlays.
 - Each accent phrase is drawn in the style's **accent colour** on a semi-transparent dark pill background (rounded rectangle, ~70% opacity black).
 - Font: bold sans-serif, 80–96 px. Text wraps at 920 px max width.
-- **Position**: Centred horizontally in the caption zone (bottom 300 px). Vertically placed 30 px below the top of the caption zone.
+- **Position**: Centred horizontally, placed 60 px above the caption zone (avoiding TikTok UI overlap).
 - **Entrance animation**: Slide-up reveal — text rises 20 px from below with ease-out deceleration over 0.3 seconds, combined with opacity fade-in.
-- **Timing**: Accent overlays are spaced evenly across the video duration. Each displays for ~3 seconds.
+- **Timing**: Accent overlays are spaced evenly across the video duration. Each displays for ~1.8 seconds.
 - **Fade in**: 0.3 seconds (with simultaneous slide-up). **Fade out**: 0.25 seconds.
 - **Z-order**: Accent text is composited on top of all other layers (background, image overlays).
 - **Gap-filling**: When an accent text clip falls during a gap between image overlays (no image on screen), it is promoted from the caption zone to the **centre of the safe zone** (where images normally appear). This ensures there is always visual activity on screen. When an image overlay is showing, accent text stays in the caption zone.
@@ -58,16 +58,16 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 
 - An optional **title card** is rendered as the topmost text layer during the video intro.
 - The title is drawn in white (default) on a semi-transparent dark pill background (rounded rectangle, ~63% opacity).
-- Font: bold sans-serif, 80 px. Text wraps at 900 px max width.
+- Font: bold sans-serif, 96 px. Text wraps at 900 px max width.
 - **Position**: Centred horizontally, placed at ~18% from the top of the safe zone (above the caption area).
-- **Timing**: Appears at 0.0 seconds (instant hook — no delay), displays for ~4 seconds by default.
+- **Timing**: Appears at 0.0 seconds (instant hook — no delay), displays for ~2.5 seconds by default.
 - **Fade in**: None (hard cut for immediate visual impact). **Fade out**: 0.4 seconds.
 - **Z-order**: Above image overlays, below accent text overlays.
 - The title text is user-editable and auto-populated from the topic. It can be disabled entirely.
 
 ## Progress bar
 
-- A thin **4 px** horizontal bar at the very top of the frame (y=0).
+- A thin **6 px** horizontal bar placed at y=48 (below the phone status bar / dynamic island).
 - Colour matches the visual style's **accent colour**.
 - Fills left-to-right over the full video duration: `width = (t / total_duration) * 1080`.
 - **Z-order**: Topmost layer — above all overlays, accent text, and title.
