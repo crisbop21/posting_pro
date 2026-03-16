@@ -103,7 +103,7 @@ def _research_custom_topic(topic: str) -> str:
     for attempt in range(MAX_RETRIES + 1):
         try:
             response = claude.messages.create(
-                model="claude-sonnet-4-5",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=4000,
                 system=(
                     "You are a research assistant. Given a finance or AI topic, "
