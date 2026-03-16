@@ -48,6 +48,7 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - **Timing**: Accent overlays are spaced evenly across the video duration. Each displays for ~3 seconds.
 - **Fade in**: 0.3 seconds. **Fade out**: 0.25 seconds.
 - **Z-order**: Accent text is composited on top of all other layers (background, image overlays).
+- **Gap-filling**: When an accent text clip falls during a gap between image overlays (no image on screen), it is promoted from the caption zone to the **centre of the safe zone** (where images normally appear). This ensures there is always visual activity on screen. When an image overlay is showing, accent text stays in the caption zone.
 - Accent overlays are stripped from the voiceover text before TTS generation — they are visual-only.
 
 ## Title text overlay

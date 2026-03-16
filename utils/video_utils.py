@@ -485,21 +485,72 @@ def render_accent_text_image(
     return output_path
 
 
+def _compute_gap_intervals(
+    overlay_timings: list[dict],
+    total_duration_s: float,
+) -> list[tuple[float, float]]:
+    """Return (start, end) intervals where no image overlay is on screen.
+
+    Args:
+        overlay_timings: List of dicts with ``start_s`` and ``duration_s``.
+        total_duration_s: Master video duration in seconds.
+
+    Returns:
+        List of (gap_start, gap_end) tuples sorted chronologically.
+    """
+    if not overlay_timings:
+        return [(0.0, total_duration_s)]
+
+    sorted_ovs = sorted(overlay_timings, key=lambda o: o["start_s"])
+    gaps: list[tuple[float, float]] = []
+
+    # Gap before the first overlay
+    if sorted_ovs[0]["start_s"] > 0.5:
+        gaps.append((0.0, sorted_ovs[0]["start_s"]))
+
+    # Gaps between consecutive overlays
+    for i in range(len(sorted_ovs) - 1):
+        end_current = sorted_ovs[i]["start_s"] + sorted_ovs[i]["duration_s"]
+        start_next = sorted_ovs[i + 1]["start_s"]
+        if start_next - end_current > 0.5:
+            gaps.append((end_current, start_next))
+
+    # Gap after the last overlay
+    last_end = sorted_ovs[-1]["start_s"] + sorted_ovs[-1]["duration_s"]
+    if total_duration_s - last_end > 0.5:
+        gaps.append((last_end, total_duration_s))
+
+    return gaps
+
+
+def _time_in_gap(t_start: float, t_end: float,
+                 gaps: list[tuple[float, float]]) -> bool:
+    """Check whether the interval [t_start, t_end] falls mostly inside a gap."""
+    mid = (t_start + t_end) / 2
+    return any(g_start <= mid <= g_end for g_start, g_end in gaps)
+
+
 def build_accent_overlay_clips(
     script: str,
     total_duration_s: float,
     accent_color: str = DEFAULT_ACCENT_COLOR,
+    overlay_timings: list[dict] | None = None,
 ) -> list:
     """Parse accent phrases from script and create timed ImageClip overlays.
 
-    Each accent phrase becomes a short text overlay that appears in the
-    caption zone (bottom 200 px) at evenly spaced intervals throughout the
-    video. They fade in/out and display for 2.5–3.5 seconds each.
+    Each accent phrase becomes a short text overlay that appears at evenly
+    spaced intervals throughout the video.  When overlay timing information
+    is provided, accent clips that fall during gaps between image overlays
+    are promoted to the centre of the safe zone (where images normally
+    appear) so there is always visual activity on screen.  Clips that
+    coincide with an image overlay stay in the caption zone.
 
     Args:
         script: The full script text with **accent** markers.
         total_duration_s: Master video duration in seconds.
         accent_color: Hex color for accent text.
+        overlay_timings: Optional list of dicts with ``start_s`` and
+            ``duration_s`` for each image overlay.  Used to detect gaps.
 
     Returns:
         List of MoviePy ImageClip objects positioned and timed, ready for
@@ -518,8 +569,16 @@ def build_accent_overlay_clips(
     gap = max(0.5, (total_duration_s - accent_duration * count) / max(count, 1))
     current_time = gap / 2  # start after a brief intro
 
-    # Caption zone: bottom 200 px, center the text vertically in it
-    caption_y = CANVAS_HEIGHT - CAPTION_ZONE + 30  # 30px below top of caption zone
+    # Pre-compute gap intervals between image overlays
+    gaps = (
+        _compute_gap_intervals(overlay_timings, total_duration_s)
+        if overlay_timings
+        else []
+    )
+
+    # Two possible Y positions
+    caption_y = CANVAS_HEIGHT - CAPTION_ZONE + 30  # caption zone
+    safe_zone_centre_y = (CANVAS_HEIGHT - CAPTION_ZONE) // 2  # image area
 
     for phrase_info in phrases:
         if current_time + accent_duration > total_duration_s:
@@ -531,11 +590,15 @@ def build_accent_overlay_clips(
             accent_color=accent_color,
         )
 
+        # Position in image area during gaps, caption zone otherwise
+        in_gap = _time_in_gap(current_time, current_time + accent_duration, gaps)
+        y_pos = safe_zone_centre_y if in_gap else caption_y
+
         clip = (
             ImageClip(img_path)
             .with_start(current_time)
             .with_duration(accent_duration)
-            .with_position(("center", caption_y))
+            .with_position(("center", y_pos))
             .with_effects([
                 vfx.CrossFadeIn(0.3),
                 vfx.CrossFadeOut(0.25),
@@ -544,10 +607,11 @@ def build_accent_overlay_clips(
         clips.append(clip)
 
         logger.info(
-            "Accent text '%s' at %.1fs–%.1fs",
+            "Accent text '%s' at %.1fs–%.1fs (position=%s)",
             phrase_info["phrase"],
             current_time,
             current_time + accent_duration,
+            "image_area" if in_gap else "caption_zone",
         )
 
         current_time += accent_duration + gap
