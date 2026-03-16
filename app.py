@@ -708,7 +708,11 @@ else:
             if missing:
                 checks.append({"check": "Overlay images", "ok": False, "detail": f"{len(missing)} file(s) missing: {missing}"})
             else:
-                checks.append({"check": "Overlay images", "ok": True, "detail": f"{len(overlays)} image(s), all present"})
+                sizes = []
+                for p in overlays:
+                    sz = Path(p).stat().st_size / (1024 * 1024)
+                    sizes.append(f"{Path(p).name} ({sz:.1f}MB)")
+                checks.append({"check": "Overlay images", "ok": True, "detail": f"{len(overlays)} image(s): {', '.join(sizes)}"})
 
         # ffmpeg/ffprobe available
         import shutil
@@ -818,20 +822,24 @@ else:
             _col_run6, _col_demo6 = st.columns([1, 1])
             with _col_run6:
                 if st.button("Assemble Video", key="btn_assemble", type="primary"):
-                    # Run pre-flight and block if critical checks fail
-                    checks = _preflight_checks()
-                    failed = [c for c in checks if not c["ok"]]
-                    if failed:
-                        for c in failed:
-                            st.error(f"**{c['check']}:** {c['detail']}")
-                        st.stop()
-
-                    _setup_ok = False
                     try:
+                        # Run pre-flight and block if critical checks fail
+                        checks = _preflight_checks()
+                        failed = [c for c in checks if not c["ok"]]
+                        if failed:
+                            for c in failed:
+                                st.error(f"**{c['check']}:** {c['detail']}")
+                            st.stop()
+
+                        # Log overlay file details for debugging
+                        _overlays = st.session_state.get("overlay_sequence", [])
+                        _overlay_info = []
+                        for _i, _p in enumerate(_overlays):
+                            _exists = Path(_p).exists()
+                            _sz = Path(_p).stat().st_size if _exists else 0
+                            _overlay_info.append(f"  #{_i+1}: {_p} ({'exists' if _exists else 'MISSING'}, {_sz} bytes)")
+
                         # Import the assembly module eagerly (on the main thread)
-                        # so that utils.api_clients initialisation happens here,
-                        # not inside the background thread where st.warning()
-                        # would crash.
                         from pipeline.assemble import run as assemble_run
 
                         gen_id = st.session_state.get("assembly_gen_id", 0) + 1
@@ -840,13 +848,21 @@ else:
                         st.session_state["assembly_done"] = False
                         st.session_state["assembly_error"] = None
                         st.session_state["assembly_started_at"] = time.time()
-                        st.session_state["assembly_debug_log"] = []
+                        st.session_state["assembly_debug_log"] = [
+                            "Button clicked — setup starting...",
+                            f"Overlay files:\n" + "\n".join(_overlay_info),
+                        ]
 
-                        state_snapshot = {k: st.session_state[k] for k in st.session_state}
+                        # Only copy DEFAULT_STATE keys — skip widget objects
+                        # (UploadedFile, etc.) that can't be used in a thread
+                        state_snapshot = {
+                            k: st.session_state[k]
+                            for k in DEFAULT_STATE
+                            if k in st.session_state
+                        }
 
                         # Shared result dict — thread writes here, main thread reads
-                        # debug_log is a shared list the thread appends to
-                        _debug_log = []
+                        _debug_log = list(st.session_state["assembly_debug_log"])
                         _result = {"done": False, "error": None, "state": None, "log": _debug_log}
 
                         def _log(msg, _log_list=_debug_log):
@@ -882,7 +898,8 @@ else:
                         thread = threading.Thread(target=_assemble_in_background, daemon=True)
                         st.session_state["_assembly_result"] = _result
                         thread.start()
-                        _setup_ok = True
+                        st.rerun()
+
                     except Exception as e:
                         st.session_state["assembly_running"] = False
                         st.session_state["assembly_started_at"] = None
@@ -892,13 +909,13 @@ else:
                             f"SETUP ERROR: {e}",
                             f"TRACEBACK:\n{full_tb}",
                         ]
-                        msg = str(e).rstrip(". ")
+                        st.session_state["assembly_error"] = f"{e}\n\nTraceback:\n{full_tb}"
                         st.error(
-                            f"Could not start video assembly: {msg}. "
-                            "Click **Assemble Video** to try again."
+                            f"Could not start video assembly: {e}. "
+                            "Check the error details below."
                         )
-                    if _setup_ok:
-                        st.rerun()
+                        with st.expander("Setup error traceback", expanded=True):
+                            st.code(full_tb, language="text")
             with _col_demo6:
                 if st.button("Use Demo Output", key="btn_demo_6"):
                     _apply_demo(6)
