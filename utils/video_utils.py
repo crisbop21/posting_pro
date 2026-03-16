@@ -1,6 +1,7 @@
 """Ken Burns renderer, color grading, cropping, accent text renderer, and MoviePy video compositor."""
 
 import json
+import math
 import random
 import re
 import subprocess
@@ -17,6 +18,7 @@ from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
     ImageClip,
+    VideoClip,
     VideoFileClip,
     vfx,
 )
@@ -34,9 +36,39 @@ FADE_OUT_S = 0.3
 MIN_OVERLAY_S = 4
 MAX_OVERLAY_S = 18
 
+# Spring-physics entrance animation
+SPRING_DURATION_S = 0.5  # total spring animation time
+SPRING_SCALE_START = 0.95  # initial scale (slightly smaller)
+SPRING_SCALE_OVERSHOOT = 1.02  # overshoot peak
+SPRING_SCALE_END = 1.0  # settle at 100%
+
 # FFmpeg encoding settings
 CRF = "23"
 CODEC = "libx264"
+
+
+def _spring_scale(t: float, duration: float = SPRING_DURATION_S) -> float:
+    """Return a scale factor with spring-physics easing (95% → 102% → 100%).
+
+    Uses a damped oscillation: starts small, overshoots the target, then
+    settles. The curve hits ~1.02 around 60% of the duration, then eases
+    back to exactly 1.0.
+
+    Used for image overlay entrance animations. After the spring duration
+    completes, returns exactly 1.0.
+    """
+    if t >= duration:
+        return SPRING_SCALE_END
+    p = t / duration
+    # Damped spring: 1 - e^(-decay*p) * cos(freq*p)
+    # Tuned so overshoot peaks at ~1.02 and settles to 1.0
+    decay = 6.0
+    freq = math.pi  # one half-oscillation over the duration
+    spring = 1.0 - math.exp(-decay * p) * math.cos(freq * p)
+    # spring goes 0 → overshoot → ~1.0
+    # Map: 0.95 at spring=0, target range = 0.95 to (0.95 + amplitude)
+    amplitude = SPRING_SCALE_OVERSHOOT - SPRING_SCALE_START  # 0.07
+    return SPRING_SCALE_START + amplitude * spring
 
 
 def render_ken_burns(image_path: str, duration_s: float, output_path: str,
@@ -363,8 +395,8 @@ def render_green_screen(output_path: str, duration_s: float,
 
 # Default accent colour — overridden by the visual style's accent_color
 DEFAULT_ACCENT_COLOR = "#FF6B35"
-ACCENT_FONT_SIZE = 64
-ACCENT_FONT_BOLD_SIZE = 68
+ACCENT_FONT_SIZE = 80
+ACCENT_FONT_BOLD_SIZE = 96
 ACCENT_TEXT_COLOR = "#FFFFFF"
 ACCENT_BG_ALPHA = 180  # 0–255 background pill opacity
 ACCENT_PADDING_X = 48
@@ -592,13 +624,26 @@ def build_accent_overlay_clips(
 
         # Position in image area during gaps, caption zone otherwise
         in_gap = _time_in_gap(current_time, current_time + accent_duration, gaps)
-        y_pos = safe_zone_centre_y if in_gap else caption_y
+        y_final = safe_zone_centre_y if in_gap else caption_y
+
+        # Slide-up reveal: text rises 20px over 0.3s while fading in
+        slide_distance = 20
+        slide_duration = 0.3
+
+        def _make_slide_pos(y_end, dist=slide_distance, dur=slide_duration):
+            def pos(t):
+                progress = min(t / dur, 1.0)
+                # Ease-out: decelerates into final position
+                eased = 1.0 - (1.0 - progress) ** 2
+                y = y_end + dist * (1.0 - eased)
+                return ("center", y)
+            return pos
 
         clip = (
             ImageClip(img_path)
             .with_start(current_time)
             .with_duration(accent_duration)
-            .with_position(("center", y_pos))
+            .with_position(_make_slide_pos(y_final))
             .with_effects([
                 vfx.CrossFadeIn(0.3),
                 vfx.CrossFadeOut(0.25),
@@ -766,11 +811,48 @@ def build_title_clip(
     return clip
 
 
+PROGRESS_BAR_HEIGHT = 4  # pixels
+
+
+def build_progress_bar_clip(
+    total_duration_s: float,
+    color_rgb: tuple[int, int, int] = (255, 107, 53),
+    height: int = PROGRESS_BAR_HEIGHT,
+) -> VideoClip:
+    """Create a thin progress bar that fills left-to-right over the video.
+
+    The bar sits at the very top of the frame (y=0) and grows from
+    width=0 to width=CANVAS_WIDTH over the full video duration.
+
+    Args:
+        total_duration_s: Video duration in seconds.
+        color_rgb: RGB tuple for the bar color (typically the accent color).
+        height: Bar height in pixels.
+
+    Returns:
+        A MoviePy VideoClip ready for compositing.
+    """
+    import numpy as np  # local import — only needed for frame generation
+
+    def make_frame(t):
+        frame = np.zeros((height, CANVAS_WIDTH, 3), dtype=np.uint8)
+        filled_w = int((t / total_duration_s) * CANVAS_WIDTH)
+        if filled_w > 0:
+            frame[:, :filled_w, :] = color_rgb
+        return frame
+
+    return (
+        VideoClip(make_frame, duration=total_duration_s)
+        .with_position((0, 0))
+    )
+
+
 def composite_video(background_path: str, audio_path: str,
                     overlay_sequence: list[dict], output_path: str,
                     darken: bool = True,
                     accent_text_clips: list | None = None,
-                    title_clip: ImageClip | None = None) -> str:
+                    title_clip: ImageClip | None = None,
+                    progress_bar_color: tuple[int, int, int] | None = None) -> str:
     """Composite overlays and audio onto the background video using MoviePy.
 
     Each overlay is an independent ImageClip layer with its own start time,
@@ -884,7 +966,10 @@ def composite_video(background_path: str, audio_path: str,
                   f"start={start:.1f}s, dur={duration:.1f}s"
                   f"{' (HOOK — hard cut)' if is_first else ''}")
 
-            effects = [vfx.CrossFadeOut(FADE_OUT_S)]
+            effects = [
+                vfx.Resize(lambda t: _spring_scale(t)),
+                vfx.CrossFadeOut(FADE_OUT_S),
+            ]
             if fade_in > 0:
                 effects.insert(0, vfx.CrossFadeIn(fade_in))
 
@@ -935,6 +1020,17 @@ def composite_video(background_path: str, audio_path: str,
     if accent_text_clips:
         print(f"[COMPOSITE] Adding {len(accent_text_clips)} accent text clips")
         clips.extend(accent_text_clips)
+
+    # ------------------------------------------------------------------
+    # Add progress bar (topmost z-order — above everything)
+    # ------------------------------------------------------------------
+    if progress_bar_color is not None:
+        progress_clip = build_progress_bar_clip(
+            total_duration_s=master_duration,
+            color_rgb=progress_bar_color,
+        )
+        clips.append(progress_clip)
+        print(f"[COMPOSITE] Progress bar added (color={progress_bar_color})")
 
     # ------------------------------------------------------------------
     # Composite and render
