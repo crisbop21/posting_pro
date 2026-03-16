@@ -676,6 +676,55 @@ else:
 
     st.divider()
 
+    # --- Pre-flight validation ---
+    def _preflight_checks() -> list[dict]:
+        """Validate all assembly inputs. Returns list of {check, ok, detail}."""
+        checks = []
+
+        # Background video
+        bg = st.session_state.get("background_video_path")
+        if not bg:
+            checks.append({"check": "Background video path", "ok": False, "detail": "Not set — complete Step 4"})
+        elif not Path(bg).exists():
+            checks.append({"check": "Background video file", "ok": False, "detail": f"File missing: {bg}"})
+        else:
+            size_mb = Path(bg).stat().st_size / (1024 * 1024)
+            checks.append({"check": "Background video", "ok": True, "detail": f"{bg} ({size_mb:.1f} MB)"})
+
+        # Script
+        script = st.session_state.get("script")
+        if not script:
+            checks.append({"check": "Script", "ok": False, "detail": "No script — complete Step 3"})
+        else:
+            wc = len(script.split())
+            checks.append({"check": "Script", "ok": True, "detail": f"{wc} words"})
+
+        # Overlays
+        overlays = st.session_state.get("overlay_sequence", [])
+        if not overlays:
+            checks.append({"check": "Overlay images", "ok": False, "detail": "No overlays — complete Step 5"})
+        else:
+            missing = [p for p in overlays if not Path(p).exists()]
+            if missing:
+                checks.append({"check": "Overlay images", "ok": False, "detail": f"{len(missing)} file(s) missing: {missing}"})
+            else:
+                checks.append({"check": "Overlay images", "ok": True, "detail": f"{len(overlays)} image(s), all present"})
+
+        # ffmpeg/ffprobe available
+        import shutil
+        for tool in ["ffmpeg", "ffprobe"]:
+            found = shutil.which(tool)
+            checks.append({"check": tool, "ok": bool(found), "detail": found or "NOT FOUND — install ffmpeg"})
+
+        # ElevenLabs API
+        try:
+            from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
+            checks.append({"check": "ElevenLabs client", "ok": elevenlabs_client is not None, "detail": f"Voice: {ELEVENLABS_VOICE_ID}" if elevenlabs_client else "Client not initialised"})
+        except Exception as e:
+            checks.append({"check": "ElevenLabs client", "ok": False, "detail": str(e)})
+
+        return checks
+
     # Maximum time (seconds) before we consider assembly stuck
     ASSEMBLY_TIMEOUT_S = 900  # 15 minutes — MoviePy composites frame-by-frame
 
@@ -696,11 +745,21 @@ else:
             else:
                 st.info("Assembling video...")
 
-            # Poll for completion via the shared result dict (thread-safe)
+            # Capture debug log from thread into session state for display
             _result = st.session_state.get("_assembly_result", {})
+            _live_log = _result.get("log", [])
+            if _live_log:
+                st.session_state["assembly_debug_log"] = list(_live_log)
+                with st.expander("Assembly debug log", expanded=False):
+                    st.code("\n".join(_live_log), language="text")
+
+            # Poll for completion via the shared result dict (thread-safe)
             if _result.get("done"):
                 st.session_state["assembly_running"] = False
                 st.session_state["assembly_started_at"] = None
+                # Persist the debug log from the thread
+                if _result.get("log"):
+                    st.session_state["assembly_debug_log"] = list(_result["log"])
                 if _result.get("error"):
                     st.session_state["assembly_error"] = _result["error"]
                 elif _result.get("state"):
@@ -737,12 +796,36 @@ else:
             _prev_err = st.session_state.get("assembly_error")
             if _prev_err:
                 st.error("Assembly failed. Click **Assemble Video** to try again.")
-                with st.expander("Error details"):
+                with st.expander("Error details", expanded=True):
                     st.code(_prev_err, language="text")
+                _prev_log = st.session_state.get("assembly_debug_log", [])
+                if _prev_log:
+                    with st.expander("Debug log from last attempt", expanded=False):
+                        st.code("\n".join(_prev_log), language="text")
+
+            # Show pre-flight checks
+            with st.expander("Pre-flight checks", expanded=False):
+                checks = _preflight_checks()
+                all_ok = all(c["ok"] for c in checks)
+                for c in checks:
+                    icon = "✅" if c["ok"] else "❌"
+                    st.text(f"  {icon} {c['check']}: {c['detail']}")
+                if all_ok:
+                    st.success("All checks passed — ready to assemble.")
+                else:
+                    st.error("Some checks failed. Fix the issues above before assembling.")
 
             _col_run6, _col_demo6 = st.columns([1, 1])
             with _col_run6:
                 if st.button("Assemble Video", key="btn_assemble", type="primary"):
+                    # Run pre-flight and block if critical checks fail
+                    checks = _preflight_checks()
+                    failed = [c for c in checks if not c["ok"]]
+                    if failed:
+                        for c in failed:
+                            st.error(f"**{c['check']}:** {c['detail']}")
+                        st.stop()
+
                     _setup_ok = False
                     try:
                         # Import the assembly module eagerly (on the main thread)
@@ -757,27 +840,41 @@ else:
                         st.session_state["assembly_done"] = False
                         st.session_state["assembly_error"] = None
                         st.session_state["assembly_started_at"] = time.time()
+                        st.session_state["assembly_debug_log"] = []
 
                         state_snapshot = {k: st.session_state[k] for k in st.session_state}
 
                         # Shared result dict — thread writes here, main thread reads
-                        _result = {"done": False, "error": None, "state": None}
+                        # debug_log is a shared list the thread appends to
+                        _debug_log = []
+                        _result = {"done": False, "error": None, "state": None, "log": _debug_log}
+
+                        def _log(msg, _log_list=_debug_log):
+                            import datetime as _dt
+                            ts = _dt.datetime.now().strftime("%H:%M:%S")
+                            _log_list.append(f"[{ts}] {msg}")
 
                         def _assemble_in_background(
                             _snapshot=state_snapshot,
                             _res=_result,
                             _run=assemble_run,
+                            _log_fn=_log,
                         ):
                             import traceback as _tb
                             try:
-                                print("[ASSEMBLE-THREAD] Starting assembly run...")
+                                _log_fn("Starting assembly run...")
+                                _log_fn(f"Background: {_snapshot.get('background_video_path')}")
+                                _log_fn(f"Overlays: {len(_snapshot.get('overlay_sequence', []))} image(s)")
+                                _log_fn(f"Script length: {len((_snapshot.get('script') or '').split())} words")
+                                _log_fn(f"Title: {'enabled' if _snapshot.get('title_enabled') else 'disabled'} — '{_snapshot.get('title_text', '')}'")
+
                                 updated = _run(_snapshot)
-                                print(f"[ASSEMBLE-THREAD] Done. final_video_path={updated.get('final_video_path')}")
+                                _log_fn(f"Done. final_video_path={updated.get('final_video_path')}")
                                 _res["state"] = updated
                             except Exception as e:
                                 full_tb = _tb.format_exc()
-                                print(f"[ASSEMBLE-THREAD] ERROR: {e}")
-                                print(f"[ASSEMBLE-THREAD] TRACEBACK:\n{full_tb}")
+                                _log_fn(f"ERROR: {e}")
+                                _log_fn(f"TRACEBACK:\n{full_tb}")
                                 _res["error"] = f"{e}\n\nTraceback:\n{full_tb}"
                             finally:
                                 _res["done"] = True
@@ -789,6 +886,12 @@ else:
                     except Exception as e:
                         st.session_state["assembly_running"] = False
                         st.session_state["assembly_started_at"] = None
+                        import traceback as _tb
+                        full_tb = _tb.format_exc()
+                        st.session_state["assembly_debug_log"] = [
+                            f"SETUP ERROR: {e}",
+                            f"TRACEBACK:\n{full_tb}",
+                        ]
                         msg = str(e).rstrip(". ")
                         st.error(
                             f"Could not start video assembly: {msg}. "
