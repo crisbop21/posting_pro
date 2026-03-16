@@ -119,6 +119,7 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
 
     Each overlay gets an equal share of the video duration, clamped to
     the 4–18 second range defined in the composition skill.
+    The first overlay always starts at t=0 for an instant visual hook.
     """
     if overlay_count == 0:
         return []
@@ -128,7 +129,7 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
     per_overlay = max(4.0, min(18.0, available / overlay_count))
 
     timings = []
-    current_time = 0.0
+    current_time = 0.0  # first overlay starts immediately (hook frame)
 
     for _ in range(overlay_count):
         if current_time + per_overlay > total_duration_s:

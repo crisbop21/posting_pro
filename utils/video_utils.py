@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Canvas dimensions for 9:16 vertical video
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
-CAPTION_ZONE = 200  # bottom pixels reserved for captions
+CAPTION_ZONE = 300  # bottom pixels reserved for captions (TikTok UI covers ~300px)
 
 # Overlay timing
 FADE_IN_S = 0.4
@@ -754,16 +754,15 @@ def build_title_clip(
 
     clip = (
         ImageClip(img_path)
-        .with_start(0.3)  # slight delay after video start
+        .with_start(0.0)  # instant hook — no delay
         .with_duration(duration_s)
         .with_position(("center", title_y))
         .with_effects([
-            vfx.CrossFadeIn(0.5),
             vfx.CrossFadeOut(0.4),
         ])
     )
 
-    logger.info("Title clip '%s' at 0.3s–%.1fs", title_text, 0.3 + duration_s)
+    logger.info("Title clip '%s' at 0.0s–%.1fs (hard cut)", title_text, duration_s)
     return clip
 
 
@@ -856,7 +855,7 @@ def composite_video(background_path: str, audio_path: str,
 
     clips = [bg_clip]
 
-    # Vertical centre of the safe zone (above the 200 px caption area)
+    # Vertical centre of the safe zone (above the 300 px caption area)
     safe_zone_centre_y = (CANVAS_HEIGHT - CAPTION_ZONE) // 2
 
     overlay_details = []
@@ -876,18 +875,25 @@ def composite_video(background_path: str, audio_path: str,
             continue
 
         try:
+            # First overlay: hard-cut at t=0 (no fade-in) for an instant hook
+            is_first = (i == 0)
+            fade_in = 0.0 if is_first else FADE_IN_S
+
             print(f"[COMPOSITE] Building overlay #{i+1}: "
                   f"{Path(ov['image_path']).name}, "
-                  f"start={start:.1f}s, dur={duration:.1f}s")
+                  f"start={start:.1f}s, dur={duration:.1f}s"
+                  f"{' (HOOK — hard cut)' if is_first else ''}")
+
+            effects = [vfx.CrossFadeOut(FADE_OUT_S)]
+            if fade_in > 0:
+                effects.insert(0, vfx.CrossFadeIn(fade_in))
+
             img_clip = (
                 ImageClip(ov["image_path"])
                 .with_start(start)
                 .with_duration(duration)
                 .with_position(("center", safe_zone_centre_y))
-                .with_effects([
-                    vfx.CrossFadeIn(FADE_IN_S),
-                    vfx.CrossFadeOut(FADE_OUT_S),
-                ])
+                .with_effects(effects)
             )
             clips.append(img_clip)
             print(f"[COMPOSITE] Overlay #{i+1} added OK")

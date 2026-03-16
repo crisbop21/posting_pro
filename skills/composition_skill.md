@@ -26,14 +26,15 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - **Rounded corners**: 24 px radius on all four corners.
 - **Drop shadow**: 8 px offset, black at 30% opacity, Gaussian blur radius 8 px.
 - **Horizontal position**: Always centred (`x = (1080 - image_width) / 2`).
-- **Vertical position**: Centre the overlay in the safe zone (top of canvas to 200 px above the bottom). The vertical centre of the safe zone is `(1920 - 200) / 2 = 860 px`.
-- **Bottom 200 px**: Reserved for captions/subtitles. No overlay may extend into this zone.
+- **Vertical position**: Centre the overlay in the safe zone (top of canvas to 300 px above the bottom). The vertical centre of the safe zone is `(1920 - 300) / 2 = 810 px`.
+- **Bottom 300 px**: Reserved for captions/subtitles and TikTok UI elements (username, description, music bar). No overlay may extend into this zone.
 
 ## Overlay timing
 
 - **Beat map**: When available, overlay timing is driven by a beat map generated alongside the script. The beat map uses percentage-based positions (0.0–1.0 of total duration) that are converted to absolute seconds at assembly time using the actual audio duration.
 - **Fallback**: When no beat map is available, overlays are distributed evenly across the video duration.
-- **Fade in**: 0.4 seconds (linear alpha ramp from 0 to 1).
+- **First overlay (hook frame)**: Appears at t=0 with a **hard cut** (no fade-in). This ensures the viewer sees visual content immediately — no empty background frames on scroll.
+- **Fade in** (subsequent overlays): 0.4 seconds (linear alpha ramp from 0 to 1).
 - **Fade out**: 0.3 seconds (linear alpha ramp from 1 to 0).
 - **Minimum on-screen duration**: 4 seconds (including fades).
 - **Maximum on-screen duration**: 18 seconds.
@@ -44,7 +45,7 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - Key phrases marked with `**double asterisks**` in the script are rendered as accent text overlays.
 - Each accent phrase is drawn in the style's **accent colour** on a semi-transparent dark pill background (rounded rectangle, ~70% opacity black).
 - Font: bold sans-serif, 64–68 px. Text wraps at 920 px max width.
-- **Position**: Centred horizontally in the caption zone (bottom 200 px). Vertically placed 30 px below the top of the caption zone.
+- **Position**: Centred horizontally in the caption zone (bottom 300 px). Vertically placed 30 px below the top of the caption zone.
 - **Timing**: Accent overlays are spaced evenly across the video duration. Each displays for ~3 seconds.
 - **Fade in**: 0.3 seconds. **Fade out**: 0.25 seconds.
 - **Z-order**: Accent text is composited on top of all other layers (background, image overlays).
@@ -57,8 +58,8 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - The title is drawn in white (default) on a semi-transparent dark pill background (rounded rectangle, ~63% opacity).
 - Font: bold sans-serif, 80 px. Text wraps at 900 px max width.
 - **Position**: Centred horizontally, placed at ~18% from the top of the safe zone (above the caption area).
-- **Timing**: Appears at 0.3 seconds, displays for ~4 seconds by default.
-- **Fade in**: 0.5 seconds. **Fade out**: 0.4 seconds.
+- **Timing**: Appears at 0.0 seconds (instant hook — no delay), displays for ~4 seconds by default.
+- **Fade in**: None (hard cut for immediate visual impact). **Fade out**: 0.4 seconds.
 - **Z-order**: Above image overlays, below accent text overlays.
 - The title text is user-editable and auto-populated from the topic. It can be disabled entirely.
 
