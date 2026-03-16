@@ -537,19 +537,19 @@ def _compute_gap_intervals(
     gaps: list[tuple[float, float]] = []
 
     # Gap before the first overlay
-    if sorted_ovs[0]["start_s"] > 0.5:
+    if sorted_ovs[0]["start_s"] > 0.2:
         gaps.append((0.0, sorted_ovs[0]["start_s"]))
 
     # Gaps between consecutive overlays
     for i in range(len(sorted_ovs) - 1):
         end_current = sorted_ovs[i]["start_s"] + sorted_ovs[i]["duration_s"]
         start_next = sorted_ovs[i + 1]["start_s"]
-        if start_next - end_current > 0.5:
+        if start_next - end_current > 0.2:
             gaps.append((end_current, start_next))
 
     # Gap after the last overlay
     last_end = sorted_ovs[-1]["start_s"] + sorted_ovs[-1]["duration_s"]
-    if total_duration_s - last_end > 0.5:
+    if total_duration_s - last_end > 0.2:
         gaps.append((last_end, total_duration_s))
 
     return gaps
@@ -597,7 +597,7 @@ def build_accent_overlay_clips(
 
     # Space accent overlays evenly across the video duration
     # Each gets ~3 seconds on screen
-    accent_duration = 3.0
+    accent_duration = 1.8
     gap = max(0.5, (total_duration_s - accent_duration * count) / max(count, 1))
     current_time = gap / 2  # start after a brief intro
 
@@ -609,7 +609,7 @@ def build_accent_overlay_clips(
     )
 
     # Two possible Y positions
-    caption_y = CANVAS_HEIGHT - CAPTION_ZONE + 30  # caption zone
+    caption_y = CANVAS_HEIGHT - CAPTION_ZONE - 60  # just above TikTok UI zone
     safe_zone_centre_y = (CANVAS_HEIGHT - CAPTION_ZONE) // 2  # image area
 
     for phrase_info in phrases:
@@ -668,12 +668,12 @@ def build_accent_overlay_clips(
 # Title text rendering (PIL-based → ImageClip)
 # ---------------------------------------------------------------------------
 
-TITLE_FONT_SIZE = 80
+TITLE_FONT_SIZE = 96
 TITLE_MAX_WIDTH = 900  # max text block width (px)
 TITLE_PADDING_X = 60
 TITLE_PADDING_Y = 40
 TITLE_BG_ALPHA = 160  # background pill opacity
-TITLE_DEFAULT_DURATION = 4.0  # seconds on screen
+TITLE_DEFAULT_DURATION = 2.5  # seconds on screen — faster hook turnover
 
 
 def render_title_image(
@@ -811,7 +811,8 @@ def build_title_clip(
     return clip
 
 
-PROGRESS_BAR_HEIGHT = 4  # pixels
+PROGRESS_BAR_HEIGHT = 6  # pixels
+PROGRESS_BAR_Y = 48  # below phone status bar / dynamic island
 
 
 def build_progress_bar_clip(
@@ -843,7 +844,7 @@ def build_progress_bar_clip(
 
     return (
         VideoClip(make_frame, duration=total_duration_s)
-        .with_position((0, 0))
+        .with_position((0, PROGRESS_BAR_Y))
     )
 
 
