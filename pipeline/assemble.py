@@ -119,6 +119,7 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
 
     Each overlay gets an equal share of the video duration, clamped to
     the 4–18 second range defined in the composition skill.
+    The first overlay always starts at t=0 for an instant visual hook.
     """
     if overlay_count == 0:
         return []
@@ -128,7 +129,7 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
     per_overlay = max(4.0, min(18.0, available / overlay_count))
 
     timings = []
-    current_time = 0.0
+    current_time = 0.0  # first overlay starts immediately (hook frame)
 
     for _ in range(overlay_count):
         if current_time + per_overlay > total_duration_s:
@@ -254,6 +255,13 @@ def run(state: dict) -> dict:
     else:
         print("[ASSEMBLE] Title overlay disabled or empty")
 
+    # Convert accent hex color to RGB tuple for the progress bar
+    def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+        h = hex_color.lstrip("#")
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    progress_bar_rgb = _hex_to_rgb(accent_color)
+
     # Composite the final video
     print(f"[ASSEMBLE] Compositing video to {output_path}...")
     for attempt in range(MAX_RETRIES + 1):
@@ -265,6 +273,7 @@ def run(state: dict) -> dict:
                 output_path=output_path,
                 accent_text_clips=accent_clips,
                 title_clip=title_clip_obj,
+                progress_bar_color=progress_bar_rgb,
             )
             print(f"[ASSEMBLE] Video composited successfully: {output_path}")
             state["final_video_path"] = output_path

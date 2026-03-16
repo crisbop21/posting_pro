@@ -139,8 +139,8 @@ The composition rules are defined in `skills/composition_skill.md`. Always read 
 
 - Canvas: 1080 x 1920 px
 - Overlay images: max 85% canvas width (918 px), rounded corners 24 px, drop shadow
-- Bottom 200 px: reserved for captions, keep overlays out of this zone
-- Fade in: 0.4 seconds. Fade out: 0.3 seconds
+- Bottom 300 px: reserved for captions and TikTok UI, keep overlays out of this zone
+- First overlay: hard cut at t=0 (no fade-in) for instant hook. Subsequent overlays: fade in 0.4 seconds. Fade out: 0.3 seconds
 - Each overlay: minimum 4 seconds, maximum 18 seconds on screen
 - Background: Ken Burns loop must match or exceed total audio duration
 

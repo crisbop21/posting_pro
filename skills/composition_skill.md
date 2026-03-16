@@ -26,27 +26,30 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - **Rounded corners**: 24 px radius on all four corners.
 - **Drop shadow**: 8 px offset, black at 30% opacity, Gaussian blur radius 8 px.
 - **Horizontal position**: Always centred (`x = (1080 - image_width) / 2`).
-- **Vertical position**: Centre the overlay in the safe zone (top of canvas to 200 px above the bottom). The vertical centre of the safe zone is `(1920 - 200) / 2 = 860 px`.
-- **Bottom 200 px**: Reserved for captions/subtitles. No overlay may extend into this zone.
+- **Vertical position**: Centre the overlay in the safe zone (top of canvas to 300 px above the bottom). The vertical centre of the safe zone is `(1920 - 300) / 2 = 810 px`.
+- **Bottom 300 px**: Reserved for captions/subtitles and TikTok UI elements (username, description, music bar). No overlay may extend into this zone.
 
 ## Overlay timing
 
 - **Beat map**: When available, overlay timing is driven by a beat map generated alongside the script. The beat map uses percentage-based positions (0.0–1.0 of total duration) that are converted to absolute seconds at assembly time using the actual audio duration.
 - **Fallback**: When no beat map is available, overlays are distributed evenly across the video duration.
-- **Fade in**: 0.4 seconds (linear alpha ramp from 0 to 1).
+- **First overlay (hook frame)**: Appears at t=0 with a **hard cut** (no fade-in). This ensures the viewer sees visual content immediately — no empty background frames on scroll.
+- **Fade in** (subsequent overlays): 0.4 seconds (linear alpha ramp from 0 to 1).
 - **Fade out**: 0.3 seconds (linear alpha ramp from 1 to 0).
 - **Minimum on-screen duration**: 4 seconds (including fades).
 - **Maximum on-screen duration**: 18 seconds.
 - **Gap between overlays**: At least 0.5 seconds of background-only between consecutive overlays.
+- **Entrance animation**: All image overlays use a spring-physics scale entrance — starting at 95% size, overshooting to 102%, and settling to 100% over 0.5 seconds. This gives each cut a sense of intentional energy.
 
 ## Accent text overlays
 
 - Key phrases marked with `**double asterisks**` in the script are rendered as accent text overlays.
 - Each accent phrase is drawn in the style's **accent colour** on a semi-transparent dark pill background (rounded rectangle, ~70% opacity black).
-- Font: bold sans-serif, 64–68 px. Text wraps at 920 px max width.
-- **Position**: Centred horizontally in the caption zone (bottom 200 px). Vertically placed 30 px below the top of the caption zone.
+- Font: bold sans-serif, 80–96 px. Text wraps at 920 px max width.
+- **Position**: Centred horizontally in the caption zone (bottom 300 px). Vertically placed 30 px below the top of the caption zone.
+- **Entrance animation**: Slide-up reveal — text rises 20 px from below with ease-out deceleration over 0.3 seconds, combined with opacity fade-in.
 - **Timing**: Accent overlays are spaced evenly across the video duration. Each displays for ~3 seconds.
-- **Fade in**: 0.3 seconds. **Fade out**: 0.25 seconds.
+- **Fade in**: 0.3 seconds (with simultaneous slide-up). **Fade out**: 0.25 seconds.
 - **Z-order**: Accent text is composited on top of all other layers (background, image overlays).
 - **Gap-filling**: When an accent text clip falls during a gap between image overlays (no image on screen), it is promoted from the caption zone to the **centre of the safe zone** (where images normally appear). This ensures there is always visual activity on screen. When an image overlay is showing, accent text stays in the caption zone.
 - Accent overlays are stripped from the voiceover text before TTS generation — they are visual-only.
@@ -57,10 +60,18 @@ Rules for compositing overlay images onto the Ken Burns background video. These 
 - The title is drawn in white (default) on a semi-transparent dark pill background (rounded rectangle, ~63% opacity).
 - Font: bold sans-serif, 80 px. Text wraps at 900 px max width.
 - **Position**: Centred horizontally, placed at ~18% from the top of the safe zone (above the caption area).
-- **Timing**: Appears at 0.3 seconds, displays for ~4 seconds by default.
-- **Fade in**: 0.5 seconds. **Fade out**: 0.4 seconds.
+- **Timing**: Appears at 0.0 seconds (instant hook — no delay), displays for ~4 seconds by default.
+- **Fade in**: None (hard cut for immediate visual impact). **Fade out**: 0.4 seconds.
 - **Z-order**: Above image overlays, below accent text overlays.
 - The title text is user-editable and auto-populated from the topic. It can be disabled entirely.
+
+## Progress bar
+
+- A thin **4 px** horizontal bar at the very top of the frame (y=0).
+- Colour matches the visual style's **accent colour**.
+- Fills left-to-right over the full video duration: `width = (t / total_duration) * 1080`.
+- **Z-order**: Topmost layer — above all overlays, accent text, and title.
+- Increases watch-through rate by giving viewers a sense of video progress.
 
 ## Audio
 
