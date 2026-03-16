@@ -111,7 +111,7 @@ def _research_custom_topic(topic: str) -> str:
                     "recent developments, and context. Include specific numbers, "
                     "dates, and sources where possible. Output plain text only."
                 ),
-                tools=[{"type": "web_search_20250305"}],
+                tools=[{"type": "web_search_20250305", "name": "web_search"}],
                 messages=[{"role": "user", "content": topic}],
             )
             # Extract text blocks from the response (skip web search tool-use blocks)
