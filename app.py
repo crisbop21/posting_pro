@@ -704,15 +704,22 @@ else:
         if not overlays:
             checks.append({"check": "Overlay images", "ok": False, "detail": "No overlays — complete Step 5"})
         else:
-            missing = [p for p in overlays if not Path(p).exists()]
+            missing = [p for p in overlays if not p or not Path(p).exists()]
             if missing:
-                checks.append({"check": "Overlay images", "ok": False, "detail": f"{len(missing)} file(s) missing: {missing}"})
+                checks.append({"check": "Overlay images", "ok": False, "detail": f"{len(missing)} file(s) missing or empty path: {missing}"})
             else:
                 sizes = []
+                placeholders = 0
                 for p in overlays:
                     sz = Path(p).stat().st_size / (1024 * 1024)
+                    is_placeholder = "placeholder_" in Path(p).name
+                    if is_placeholder:
+                        placeholders += 1
                     sizes.append(f"{Path(p).name} ({sz:.1f}MB)")
-                checks.append({"check": "Overlay images", "ok": True, "detail": f"{len(overlays)} image(s): {', '.join(sizes)}"})
+                detail = f"{len(overlays)} image(s): {', '.join(sizes)}"
+                if placeholders:
+                    detail += f" — {placeholders} placeholder(s), consider swapping"
+                checks.append({"check": "Overlay images", "ok": True, "detail": detail})
 
         # ffmpeg/ffprobe available
         import shutil
