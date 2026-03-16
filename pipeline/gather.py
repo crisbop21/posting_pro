@@ -18,13 +18,13 @@ def _fetch_marketaux(search: str = "") -> list[dict]:
         search: Optional keyword filter. When provided, only articles
                 matching these terms are returned.
     """
-    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
+    three_days_ago = (datetime.now(timezone.utc) - timedelta(days=3)).strftime(
         "%Y-%m-%dT%H:%M"
     )
     params = {
         "filter_entities": "true",
         "language": "en",
-        "published_after": yesterday,
+        "published_after": three_days_ago,
         "api_token": MARKETAUX_API_KEY,
     }
     if search:
@@ -59,18 +59,26 @@ def _fetch_marketaux(search: str = "") -> list[dict]:
 
 def _fetch_finnhub() -> list[dict]:
     """Fetch general market news from Finnhub as a fallback."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=3)
     for attempt in range(MAX_RETRIES + 1):
         try:
             resp = requests.get(
                 "https://finnhub.io/api/v1/news",
                 params={
                     "category": "general",
+                    "minId": 0,
                     "token": FINNHUB_API_KEY,
                 },
                 timeout=15,
             )
             resp.raise_for_status()
             articles = resp.json()
+            recent = [
+                a for a in articles
+                if datetime.fromtimestamp(
+                    a.get("datetime", 0), tz=timezone.utc
+                ) >= cutoff
+            ]
             return [
                 {
                     "title": a.get("headline", ""),
@@ -81,7 +89,7 @@ def _fetch_finnhub() -> list[dict]:
                         a.get("datetime", 0), tz=timezone.utc
                     ).isoformat(),
                 }
-                for a in articles[:10]
+                for a in recent[:10]
             ]
         except (requests.RequestException, ValueError):
             if attempt == MAX_RETRIES:
