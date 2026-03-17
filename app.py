@@ -682,6 +682,23 @@ else:
         )
         st.session_state["title_text"] = title_text
 
+    st.subheader("Section Subtitles")
+    section_subs_enabled = st.checkbox(
+        "Auto-generate subtitles for each section",
+        value=st.session_state.get("section_subtitles_enabled", True),
+        key="chk_section_subtitles",
+        help="Short subtitles appear in the title area, one per image section, "
+             "so the upper part of the screen is never empty.",
+    )
+    st.session_state["section_subtitles_enabled"] = section_subs_enabled
+
+    # Show previously generated subtitles for review
+    if section_subs_enabled and st.session_state.get("section_subtitles"):
+        with st.expander("Preview section subtitles", expanded=False):
+            for i, sub in enumerate(st.session_state["section_subtitles"], 1):
+                if sub:
+                    st.text(f"Section {i}: {sub}")
+
     st.divider()
 
     # --- Pre-flight validation ---

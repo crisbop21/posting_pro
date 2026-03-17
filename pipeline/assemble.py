@@ -8,15 +8,17 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
+from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID, claude
 from utils.assembly_context import AssemblyContext, CancelledError
 from utils.styles import VISUAL_STYLES
 from utils.video_utils import (
     build_accent_overlay_clips,
+    build_section_subtitle_clips,
     build_title_clip,
     composite_video,
     generate_slug,
     DEFAULT_ACCENT_COLOR,
+    TITLE_DEFAULT_DURATION,
     CANVAS_HEIGHT,
     CAPTION_ZONE,
 )
@@ -99,6 +101,68 @@ def _get_audio_duration(audio_path: str) -> float | None:
     except Exception as e:
         logger.warning("ffprobe failed for %s: %s", audio_path, e)
     return None
+
+
+def _generate_section_subtitles(script: str, overlay_count: int) -> list[str]:
+    """Use Claude to generate short section subtitles from the script.
+
+    Splits the script by [IMAGE:] markers into sections and asks Claude
+    to produce a punchy subtitle (3-6 words) for each section.
+
+    Args:
+        script: The full script text with [IMAGE:] markers.
+        overlay_count: Number of image overlays (= number of subtitles needed).
+
+    Returns:
+        List of subtitle strings, one per overlay section.
+    """
+    # Split script into sections around [IMAGE:] markers
+    sections = re.split(r"\[IMAGE:\s*.+?\]", script)
+    # Filter out empty sections and strip whitespace
+    sections = [s.strip() for s in sections if s.strip()]
+
+    if not sections:
+        return []
+
+    # Build the prompt with all sections
+    section_list = "\n".join(
+        f"Section {i + 1}: {s[:200]}" for i, s in enumerate(sections[:overlay_count])
+    )
+
+    prompt = (
+        f"Generate exactly {min(len(sections), overlay_count)} short subtitles "
+        f"(3-6 words each) for these video sections. Each subtitle should capture "
+        f"the key point of that section — punchy and informative, like a news ticker.\n\n"
+        f"{section_list}\n\n"
+        f"Return ONLY the subtitles, one per line, no numbering or punctuation at the end."
+    )
+
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            response = claude.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=300,
+                system="You generate short, punchy section subtitles for finance/AI news videos. Keep each subtitle to 3-6 words. No numbering, no trailing punctuation.",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
+            subtitles = [line.strip() for line in raw.splitlines() if line.strip()]
+            # Pad or trim to match overlay count
+            if len(subtitles) < overlay_count:
+                subtitles.extend([""] * (overlay_count - len(subtitles)))
+            return subtitles[:overlay_count]
+        except Exception as e:
+            if attempt == MAX_RETRIES:
+                logger.warning("Section subtitle generation failed: %s", e)
+                # Fallback: derive subtitles from IMAGE marker descriptions
+                markers = re.findall(r"\[IMAGE:\s*(.+?)\]", script)
+                fallback = [m.strip().title() for m in markers[:overlay_count]]
+                if len(fallback) < overlay_count:
+                    fallback.extend([""] * (overlay_count - len(fallback)))
+                return fallback[:overlay_count]
+            time.sleep(2 ** attempt)
+
+    return []
 
 
 def _beat_map_to_timings(beat_map: list[dict], total_duration_s: float,
@@ -298,6 +362,28 @@ def run(state: dict, ctx: AssemblyContext | None = None) -> dict:
     else:
         _log("[ASSEMBLE] Title overlay disabled or empty")
 
+    # Build section subtitle clips if enabled
+    section_subtitle_clips = []
+    if state.get("section_subtitles_enabled", True):
+        subtitles = state.get("section_subtitles", [])
+        if not subtitles and overlay_sequence:
+            _log("[ASSEMBLE] Generating section subtitles via Claude...")
+            subtitles = _generate_section_subtitles(script, len(overlay_sequence))
+            state["section_subtitles"] = subtitles
+            _log(f"[ASSEMBLE] Generated {len(subtitles)} section subtitles")
+
+        if subtitles and overlay_timings_for_accents:
+            title_dur = TITLE_DEFAULT_DURATION if title_clip_obj else 0.0
+            section_subtitle_clips = build_section_subtitle_clips(
+                subtitles=subtitles,
+                overlay_timings=overlay_timings_for_accents,
+                total_duration_s=duration,
+                title_duration_s=title_dur,
+            )
+            _log(f"[ASSEMBLE] Built {len(section_subtitle_clips)} section subtitle clips")
+    else:
+        _log("[ASSEMBLE] Section subtitles disabled")
+
     # Convert accent hex color to RGB tuple for the progress bar
     def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
         h = hex_color.lstrip("#")
@@ -320,6 +406,7 @@ def run(state: dict, ctx: AssemblyContext | None = None) -> dict:
                 output_path=output_path,
                 accent_text_clips=accent_clips,
                 title_clip=title_clip_obj,
+                section_subtitle_clips=section_subtitle_clips,
                 progress_bar_color=progress_bar_rgb,
             )
             _log(f"[ASSEMBLE] Video composited successfully: {output_path}")
