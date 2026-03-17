@@ -19,6 +19,7 @@ from utils.video_utils import (
     DEFAULT_ACCENT_COLOR,
     CANVAS_HEIGHT,
     CAPTION_ZONE,
+    TITLE_DEFAULT_DURATION,
 )
 
 logger = logging.getLogger(__name__)
@@ -135,28 +136,35 @@ def _beat_map_to_timings(beat_map: list[dict], total_duration_s: float,
 def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list[dict]:
     """Compute evenly spaced start times and durations for overlays.
 
-    Each overlay gets an equal share of the video duration, clamped to
-    the 4–18 second range defined in the composition skill.
-    The first overlay always starts at t=0 for an instant visual hook.
+    Each overlay gets an equal share of the video duration so that the
+    full timeline is covered with no empty gaps.  The per-overlay
+    duration is floored at 4 seconds but has no upper cap — if there are
+    few overlays and a long video, each overlay simply stays on screen
+    longer.  The first overlay always starts at t=0 for an instant
+    visual hook.
     """
     if overlay_count == 0:
         return []
 
     gap = 0.2  # seconds between overlays — tighter pacing for dopamine
     available = total_duration_s - (gap * (overlay_count - 1))
-    per_overlay = max(4.0, min(18.0, available / overlay_count))
+    per_overlay = max(4.0, available / overlay_count)
 
     timings = []
     current_time = 0.0  # first overlay starts immediately (hook frame)
 
-    for _ in range(overlay_count):
-        if current_time + per_overlay > total_duration_s:
-            break
+    for i in range(overlay_count):
+        # Last overlay stretches to fill any remaining time so there is
+        # never an empty tail.
+        if i == overlay_count - 1:
+            duration = max(4.0, total_duration_s - current_time)
+        else:
+            duration = per_overlay
         timings.append({
             "start_s": round(current_time, 2),
-            "duration_s": round(per_overlay, 2),
+            "duration_s": round(duration, 2),
         })
-        current_time += per_overlay + gap
+        current_time += duration + gap
 
     return timings
 
@@ -285,11 +293,15 @@ def run(state: dict, ctx: AssemblyContext | None = None) -> dict:
     _log(f"[ASSEMBLE] Built {len(accent_clips)} accent text clips")
 
     # Build title overlay clip if enabled
+    # Match title duration to the first overlay so the title doesn't
+    # vanish while the first image is still on screen.
     title_clip_obj = None
     if state.get("title_enabled", True) and state.get("title_text", "").strip():
+        first_overlay_dur = overlay_sequence[0]["duration_s"] if overlay_sequence else None
         title_clip_obj = build_title_clip(
             title_text=state["title_text"],
             total_duration_s=duration,
+            duration_s=first_overlay_dur if first_overlay_dur else TITLE_DEFAULT_DURATION,
         )
         if title_clip_obj:
             _log(f"[ASSEMBLE] Title clip built: '{state['title_text']}'")
