@@ -884,6 +884,8 @@ else:
                         # Force reload to pick up any code changes between
                         # Streamlit reruns (cached sys.modules can be stale).
                         import importlib
+                        import utils.video_utils as _video_utils_mod
+                        importlib.reload(_video_utils_mod)
                         import pipeline.assemble as _assemble_mod
                         importlib.reload(_assemble_mod)
                         assemble_run = _assemble_mod.run
