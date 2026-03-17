@@ -230,7 +230,8 @@ def test_assembly_context_complete_from_thread():
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-def test_assemble_success(mock_eleven, mock_composite):
+@patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
+def test_assemble_success(mock_master, mock_eleven, mock_composite):
     """Full assembly should set final_video_path with correct naming."""
     mock_eleven.text_to_speech.convert.return_value = [b"fake audio data"]
     mock_composite.side_effect = _mock_composite_return
@@ -254,7 +255,8 @@ def test_assemble_success(mock_eleven, mock_composite):
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-def test_assemble_with_context(mock_eleven, mock_composite):
+@patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
+def test_assemble_with_context(mock_master, mock_eleven, mock_composite):
     """Assembly with ctx should use unique voiceover path and log messages."""
     from utils.assembly_context import AssemblyContext
 
@@ -283,7 +285,8 @@ def test_assemble_with_context(mock_eleven, mock_composite):
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-def test_assemble_cancellation_stops_run(mock_eleven, mock_composite):
+@patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
+def test_assemble_cancellation_stops_run(mock_master, mock_eleven, mock_composite):
     """Pre-cancelled context should raise CancelledError."""
     from utils.assembly_context import AssemblyContext, CancelledError
 
@@ -307,7 +310,8 @@ def test_assemble_cancellation_stops_run(mock_eleven, mock_composite):
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-def test_assemble_output_naming(mock_eleven, mock_composite):
+@patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
+def test_assemble_output_naming(mock_master, mock_eleven, mock_composite):
     """Output file should be outputs/{slug}-{YYYYMMDD}.mp4."""
     mock_eleven.text_to_speech.convert.return_value = [b"audio"]
     mock_composite.side_effect = _mock_composite_return
@@ -338,7 +342,8 @@ def test_assemble_output_naming(mock_eleven, mock_composite):
 
 @patch("pipeline.assemble.composite_video")
 @patch("pipeline.assemble.elevenlabs_client")
-def test_assemble_voiceover_strips_markers(mock_eleven, mock_composite):
+@patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
+def test_assemble_voiceover_strips_markers(mock_master, mock_eleven, mock_composite):
     """The voiceover text sent to ElevenLabs should not contain [IMAGE:] markers."""
     mock_eleven.text_to_speech.convert.return_value = [b"audio"]
     mock_composite.side_effect = _mock_composite_return
