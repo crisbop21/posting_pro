@@ -4,10 +4,12 @@ import concurrent.futures
 import logging
 import re
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID
+from utils.assembly_context import AssemblyContext, CancelledError
 from utils.styles import VISUAL_STYLES
 from utils.video_utils import (
     build_accent_overlay_clips,
@@ -25,8 +27,13 @@ MAX_RETRIES = 1
 VOICEOVER_TIMEOUT_S = 90  # max seconds to wait for ElevenLabs
 
 
-def _generate_voiceover(script: str) -> str:
+def _generate_voiceover(script: str, audio_path: str | None = None) -> str:
     """Generate ElevenLabs voiceover audio and save to tmp/.
+
+    Args:
+        script: Full script text (markers will be stripped).
+        audio_path: Optional unique path for this run's audio file.
+            When None, generates a unique path automatically.
 
     Returns:
         Path to the generated audio file.
@@ -37,7 +44,8 @@ def _generate_voiceover(script: str) -> str:
     clean_script = re.sub(r"\s{2,}", " ", clean_script)
 
     Path("tmp").mkdir(exist_ok=True)
-    audio_path = "tmp/voiceover.mp3"
+    if audio_path is None:
+        audio_path = f"tmp/voiceover_{uuid.uuid4().hex[:8]}.mp3"
 
     def _call_elevenlabs():
         audio = elevenlabs_client.text_to_speech.convert(
@@ -98,15 +106,25 @@ def _beat_map_to_timings(beat_map: list[dict], total_duration_s: float,
     """Convert percentage-based beat map to absolute second timings.
 
     Clamps each overlay duration to the composition skill's 4–18s range.
+    Skips entries that cannot fit the minimum duration before the video ends.
     """
     timings = []
-    for entry in beat_map:
+    for i, entry in enumerate(beat_map):
         start = entry["start_pct"] * total_duration_s
         duration = entry["duration_pct"] * total_duration_s
         duration = max(min_s, min(max_s, duration))
         # Ensure overlay doesn't run past the end of the video
         if start + duration > total_duration_s:
-            duration = max(min_s, total_duration_s - start)
+            remaining = total_duration_s - start
+            if remaining < min_s:
+                # Not enough room — skip this entry entirely
+                logger.warning(
+                    "Skipping beat map entry #%d at %.1fs: only %.1fs "
+                    "remaining (min=%.1fs)",
+                    i + 1, start, remaining, min_s,
+                )
+                continue
+            duration = remaining
         timings.append({
             "start_s": round(start, 2),
             "duration_s": round(duration, 2),
@@ -143,16 +161,25 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
     return timings
 
 
-def run(state: dict) -> dict:
+def run(state: dict, ctx: AssemblyContext | None = None) -> dict:
     """Execute Step 6: assemble the final video.
 
     Args:
         state: Current session state dict with background_video_path,
                overlay_sequence, script, and estimated_duration_s.
+        ctx: Optional AssemblyContext for thread-safe coordination,
+             cancellation support, and unique temp file paths.
+             When None, the function behaves identically to before
+             (backwards-compatible for tests and direct calls).
 
     Returns:
         Updated state with final_video_path.
     """
+    def _log(msg: str) -> None:
+        print(msg)
+        if ctx:
+            ctx.log(msg)
+
     background = state.get("background_video_path")
     if not background:
         raise RuntimeError("No background video. Complete Step 4 first.")
@@ -175,33 +202,42 @@ def run(state: dict) -> dict:
         )
     duration = state.get("estimated_duration_s", 60)
 
-    print(f"[ASSEMBLE] Inputs OK — background={background}, "
-          f"script_len={len(script)}, overlays={len(overlays)}, duration={duration}s")
+    _log(f"[ASSEMBLE] Inputs OK — background={background}, "
+         f"script_len={len(script)}, overlays={len(overlays)}, duration={duration}s")
 
-    # Generate voiceover
-    print("[ASSEMBLE] Generating voiceover...")
-    audio_path = _generate_voiceover(script)
-    print(f"[ASSEMBLE] Voiceover saved to {audio_path}")
+    # --- Cancellation checkpoint: before voiceover ---
+    if ctx:
+        ctx.check_cancelled("pre-voiceover")
+
+    # Generate voiceover (unique path per run to avoid collisions)
+    _log("[ASSEMBLE] Generating voiceover...")
+    vo_path = ctx.voiceover_path() if ctx else None
+    audio_path = _generate_voiceover(script, audio_path=vo_path)
+    _log(f"[ASSEMBLE] Voiceover saved to {audio_path}")
 
     # Use actual audio duration when available, fall back to estimate
     actual_duration = _get_audio_duration(audio_path)
     if actual_duration:
-        print(f"[ASSEMBLE] Actual audio duration: {actual_duration:.1f}s "
-              f"(estimated: {duration}s)")
+        _log(f"[ASSEMBLE] Actual audio duration: {actual_duration:.1f}s "
+             f"(estimated: {duration}s)")
         duration = actual_duration
+
+    # --- Cancellation checkpoint: before timing + composite ---
+    if ctx:
+        ctx.check_cancelled("pre-composite")
 
     # Use beat map for overlay timing if available, otherwise even distribution
     beat_map = state.get("beat_map")
     if beat_map and len(beat_map) == len(overlays):
         timings = _beat_map_to_timings(beat_map, duration)
-        print(f"[ASSEMBLE] Using beat map timing: {len(timings)} entries")
+        _log(f"[ASSEMBLE] Using beat map timing: {len(timings)} entries")
     else:
         timings = _compute_overlay_timing(len(overlays), duration)
         if beat_map:
-            print(f"[ASSEMBLE] Beat map count mismatch "
-                  f"({len(beat_map)} vs {len(overlays)} overlays), "
-                  f"using even distribution")
-        print(f"[ASSEMBLE] Overlay timings computed: {len(timings)} entries")
+            _log(f"[ASSEMBLE] Beat map count mismatch "
+                 f"({len(beat_map)} vs {len(overlays)} overlays), "
+                 f"using even distribution")
+        _log(f"[ASSEMBLE] Overlay timings computed: {len(timings)} entries")
 
     # Build overlay sequence with timing and paths
     overlay_sequence = []
@@ -212,6 +248,13 @@ def run(state: dict) -> dict:
                 "start_s": timing["start_s"],
                 "duration_s": timing["duration_s"],
             })
+
+    # Warn if some overlays were dropped due to insufficient timing slots
+    if len(timings) < len(overlays):
+        dropped = len(overlays) - len(timings)
+        _log(f"[ASSEMBLE] WARNING: {dropped} overlay(s) dropped — only "
+             f"{len(timings)} timing slot(s) for {len(overlays)} overlay(s). "
+             f"Video duration ({duration:.1f}s) may be too short.")
 
     # Generate output path
     topic = state.get("custom_topic") or "finance-news"
@@ -226,7 +269,7 @@ def run(state: dict) -> dict:
         style_name = state.get("visual_style")
         style_def = VISUAL_STYLES.get(style_name, {})
         accent_color = style_def.get("accent_color", DEFAULT_ACCENT_COLOR)
-    print(f"[ASSEMBLE] Accent color: {accent_color}")
+    _log(f"[ASSEMBLE] Accent color: {accent_color}")
 
     # Pass overlay timings so accent clips fill visual gaps
     overlay_timings_for_accents = [
@@ -239,7 +282,7 @@ def run(state: dict) -> dict:
         accent_color=accent_color,
         overlay_timings=overlay_timings_for_accents,
     )
-    print(f"[ASSEMBLE] Built {len(accent_clips)} accent text clips")
+    _log(f"[ASSEMBLE] Built {len(accent_clips)} accent text clips")
 
     # Build title overlay clip if enabled
     title_clip_obj = None
@@ -249,11 +292,11 @@ def run(state: dict) -> dict:
             total_duration_s=duration,
         )
         if title_clip_obj:
-            print(f"[ASSEMBLE] Title clip built: '{state['title_text']}'")
+            _log(f"[ASSEMBLE] Title clip built: '{state['title_text']}'")
         else:
-            print("[ASSEMBLE] Title clip skipped (too short or empty)")
+            _log("[ASSEMBLE] Title clip skipped (too short or empty)")
     else:
-        print("[ASSEMBLE] Title overlay disabled or empty")
+        _log("[ASSEMBLE] Title overlay disabled or empty")
 
     # Convert accent hex color to RGB tuple for the progress bar
     def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
@@ -263,9 +306,13 @@ def run(state: dict) -> dict:
     progress_bar_rgb = _hex_to_rgb(accent_color)
 
     # Composite the final video
-    print(f"[ASSEMBLE] Compositing video to {output_path}...")
+    _log(f"[ASSEMBLE] Compositing video to {output_path}...")
     for attempt in range(MAX_RETRIES + 1):
         try:
+            # Check cancellation before the expensive composite step
+            if ctx:
+                ctx.check_cancelled("pre-ffmpeg-render")
+
             _result, diagnostics = composite_video(
                 background_path=background,
                 audio_path=audio_path,
@@ -275,13 +322,15 @@ def run(state: dict) -> dict:
                 title_clip=title_clip_obj,
                 progress_bar_color=progress_bar_rgb,
             )
-            print(f"[ASSEMBLE] Video composited successfully: {output_path}")
+            _log(f"[ASSEMBLE] Video composited successfully: {output_path}")
             state["final_video_path"] = output_path
             state["assembly_diagnostics"] = diagnostics
             return state
 
+        except CancelledError:
+            raise  # propagate cancellation — don't retry
         except Exception as e:
-            print(f"[ASSEMBLE] composite_video attempt {attempt + 1} failed: {e}")
+            _log(f"[ASSEMBLE] composite_video attempt {attempt + 1} failed: {e}")
             if attempt == MAX_RETRIES:
                 raise RuntimeError(f"Could not assemble the video: {e}") from e
             time.sleep(2 ** attempt)

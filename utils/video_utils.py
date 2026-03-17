@@ -73,7 +73,7 @@ def _spring_scale(t: float, duration: float = SPRING_DURATION_S) -> float:
 
 def render_ken_burns(image_path: str, duration_s: float, output_path: str,
                      zoom_start: float = 1.0, zoom_end: float = 1.2,
-                     fps: int = 30, direction: str = "zoom_in") -> str:
+                     fps: int = 30, direction: str | None = None) -> str:
     """Generate a Ken Burns pan-and-zoom video from a still image.
 
     Args:
@@ -83,46 +83,35 @@ def render_ken_burns(image_path: str, duration_s: float, output_path: str,
         zoom_start: Starting zoom factor.
         zoom_end: Ending zoom factor.
         fps: Frames per second.
-        direction: Animation direction — "zoom_in", "zoom_out", "pan_left", "pan_right".
+        direction: Explicit direction override — "zoom_in", "zoom_out",
+            "pan_left", "pan_right".  When None (default), a random
+            pan direction and zoom are chosen for variety.
 
     Returns:
         Path to the rendered video file.
     """
     total_frames = int(duration_s * fps)
-    zoom_step = (zoom_end - zoom_start) / max(total_frames, 1)
 
-    if direction == "zoom_out":
-        # Reverse: start zoomed in, end at normal
-        z_expr = f"if(eq(on,1),{zoom_end},{zoom_end}-(on-1)*{zoom_step})"
-        x_expr = "iw/2-(iw/zoom/2)"
-        y_expr = "ih/2-(ih/zoom/2)"
-    elif direction == "pan_left":
-        # Fixed zoom at midpoint, pan from right to left
-        mid_zoom = (zoom_start + zoom_end) / 2
-        z_expr = str(mid_zoom)
-        x_expr = f"iw/zoom-iw/zoom*on/{total_frames}"
-        y_expr = "ih/2-(ih/zoom/2)"
-    elif direction == "pan_right":
-        # Fixed zoom at midpoint, pan from left to right
-        mid_zoom = (zoom_start + zoom_end) / 2
-        z_expr = str(mid_zoom)
-        x_expr = f"iw/zoom*on/{total_frames}"
-        y_expr = "ih/2-(ih/zoom/2)"
+    # Map explicit direction to internal pan + zoom_in flag
+    _direction_map = {
+        "zoom_in": ("center", True),
+        "zoom_out": ("center", False),
+        "pan_left": ("right_to_left", True),
+        "pan_right": ("left_to_right", True),
+    }
+
+    if direction and direction in _direction_map:
+        pan_direction, zoom_in = _direction_map[direction]
     else:
-        # Default: zoom_in — original behavior
-        z_expr = f"if(eq(on,1),{zoom_start},{zoom_start}+(on-1)*{zoom_step})"
-        x_expr = "iw/2-(iw/zoom/2)"
-        y_expr = "ih/2-(ih/zoom/2)"
+        # Randomize for variety when no explicit direction is given
+        pan_direction = random.choice(["center", "left_to_right", "right_to_left",
+                                       "top_to_bottom", "bottom_to_top"])
+        zoom_in = random.choice([True, False])
 
-    # Randomize the Ken Burns direction so each render feels unique.
-    # Pick a pan direction and whether we zoom in or out.
-    zoom_step = (zoom_end - zoom_start) / max(total_frames, 1)
-    pan_direction = random.choice(["center", "left_to_right", "right_to_left",
-                                   "top_to_bottom", "bottom_to_top"])
-    zoom_in = random.choice([True, False])
     if not zoom_in:
         zoom_start, zoom_end = zoom_end, zoom_start
-        zoom_step = (zoom_end - zoom_start) / max(total_frames, 1)
+
+    zoom_step = (zoom_end - zoom_start) / max(total_frames, 1)
 
     # Pan expressions — each moves the viewport gradually across the image
     pan_exprs = {
@@ -967,13 +956,6 @@ def composite_video(background_path: str, audio_path: str,
                   f"start={start:.1f}s, dur={duration:.1f}s"
                   f"{' (HOOK — hard cut)' if is_first else ''}")
 
-            effects = [
-                vfx.Resize(lambda t: _spring_scale(t)),
-                vfx.CrossFadeOut(FADE_OUT_S),
-            ]
-            if fade_in > 0:
-                effects.insert(0, vfx.CrossFadeIn(fade_in))
-
             # Centre the overlay vertically in the safe zone based on
             # its actual height so images of any size are properly placed.
             _img_for_size = Image.open(ov["image_path"])
@@ -981,13 +963,47 @@ def composite_video(background_path: str, audio_path: str,
             _img_for_size.close()
             overlay_y = max(0, (safe_zone_height - _img_h) // 2)
 
-            img_clip = (
-                ImageClip(ov["image_path"])
-                .with_start(start)
-                .with_duration(duration)
-                .with_position(("center", overlay_y))
-                .with_effects(effects)
-            )
+            # Spring entrance: only resize during the 0.5s spring window,
+            # then hold at native resolution for the remainder. This avoids
+            # the expensive per-frame resize for the entire clip duration.
+            if duration > SPRING_DURATION_S:
+                spring_clip = (
+                    ImageClip(ov["image_path"])
+                    .with_duration(SPRING_DURATION_S)
+                    .with_effects([vfx.Resize(lambda t: _spring_scale(t))])
+                )
+                static_clip = (
+                    ImageClip(ov["image_path"])
+                    .with_duration(duration - SPRING_DURATION_S)
+                )
+                from moviepy import concatenate_videoclips
+                img_clip = concatenate_videoclips([spring_clip, static_clip])
+                # Apply fade effects to the combined clip
+                fade_effects = [vfx.CrossFadeOut(FADE_OUT_S)]
+                if fade_in > 0:
+                    fade_effects.insert(0, vfx.CrossFadeIn(fade_in))
+                img_clip = (
+                    img_clip
+                    .with_start(start)
+                    .with_position(("center", overlay_y))
+                    .with_effects(fade_effects)
+                )
+            else:
+                # Short clip: spring covers the full duration
+                effects = [
+                    vfx.Resize(lambda t, d=duration: _spring_scale(t, d)),
+                    vfx.CrossFadeOut(FADE_OUT_S),
+                ]
+                if fade_in > 0:
+                    effects.insert(0, vfx.CrossFadeIn(fade_in))
+                img_clip = (
+                    ImageClip(ov["image_path"])
+                    .with_start(start)
+                    .with_duration(duration)
+                    .with_position(("center", overlay_y))
+                    .with_effects(effects)
+                )
+
             clips.append(img_clip)
             print(f"[COMPOSITE] Overlay #{i+1} added OK")
         except Exception as e:
@@ -1086,6 +1102,30 @@ def composite_video(background_path: str, audio_path: str,
         final.close()
         bg_clip.close()
         audio_clip.close()
+
+        # Clean up temp PNGs generated by accent text and title renderers.
+        # These use tempfile.mktemp() patterns in tmp/ and accumulate on
+        # every assembly run if not cleaned up.
+        _tmp_dir = Path("tmp")
+        if _tmp_dir.exists():
+            _cleaned = 0
+            for png in _tmp_dir.glob("tmp*_title.png"):
+                try:
+                    png.unlink()
+                    _cleaned += 1
+                except OSError:
+                    pass
+            for png in _tmp_dir.glob("tmp*.png"):
+                # Only remove files that look like tempfile-generated accent PNGs
+                # (tempfile.mktemp produces names like tmpXXXXXXXX.png)
+                if png.stem.startswith("tmp") and "_processed" not in png.name:
+                    try:
+                        png.unlink()
+                        _cleaned += 1
+                    except OSError:
+                        pass
+            if _cleaned:
+                print(f"[COMPOSITE] Cleaned up {_cleaned} temp PNG(s)")
 
     output_size = Path(output_path).stat().st_size / (1024 * 1024)
     print(f"[COMPOSITE] Output file: {output_size:.1f} MB")
