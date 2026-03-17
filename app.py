@@ -864,7 +864,12 @@ else:
                             _overlay_info.append(f"  #{_i+1}: {_p} ({'exists' if _exists else 'MISSING'}, {_sz} bytes)")
 
                         # Import the assembly module eagerly (on the main thread)
-                        from pipeline.assemble import run as assemble_run
+                        # Force reload to pick up any code changes between
+                        # Streamlit reruns (cached sys.modules can be stale).
+                        import importlib
+                        import pipeline.assemble as _assemble_mod
+                        importlib.reload(_assemble_mod)
+                        assemble_run = _assemble_mod.run
                         from utils.assembly_context import AssemblyContext
 
                         # Cancel any previous assembly thread
