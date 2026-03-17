@@ -764,45 +764,54 @@ else:
             else:
                 st.info("Assembling video...")
 
-            # Capture debug log from thread into session state for display
-            _result = st.session_state.get("_assembly_result", {})
-            _live_log = _result.get("log", [])
-            if _live_log:
-                st.session_state["assembly_debug_log"] = list(_live_log)
-                with st.expander("Assembly debug log", expanded=False):
-                    st.code("\n".join(_live_log), language="text")
+            # Read live log from AssemblyContext (thread-safe)
+            _ctx = st.session_state.get("_assembly_ctx")
+            if _ctx:
+                _live_log = _ctx.get_log()
+                if _live_log:
+                    st.session_state["assembly_debug_log"] = list(_live_log)
+                    with st.expander("Assembly debug log", expanded=False):
+                        st.code("\n".join(_live_log), language="text")
 
-            # Poll for completion via the shared result dict (thread-safe)
-            if _result.get("done"):
+            # Poll for completion via AssemblyContext (write-before-signal)
+            if _ctx and _ctx.is_done:
                 st.session_state["assembly_running"] = False
                 st.session_state["assembly_started_at"] = None
-                # Persist the debug log from the thread
-                if _result.get("log"):
-                    st.session_state["assembly_debug_log"] = list(_result["log"])
-                if _result.get("error"):
-                    st.session_state["assembly_error"] = _result["error"]
-                elif _result.get("state"):
-                    # Copy results from the thread's snapshot back into session state,
-                    # but skip assembly tracking keys to avoid overwriting the
-                    # reset we just did above.
-                    _assembly_tracking_keys = {
-                        "assembly_running", "assembly_done", "assembly_error",
-                        "assembly_started_at", "assembly_gen_id",
-                    }
-                    for k, v in _result["state"].items():
-                        if k in DEFAULT_STATE and k not in _assembly_tracking_keys:
-                            st.session_state[k] = v
+                # Persist debug log
+                st.session_state["assembly_debug_log"] = _ctx.get_log()
+
+                # Validate gen_id to discard results from stale threads
+                if _ctx.gen_id != st.session_state.get("assembly_gen_id"):
+                    # Stale thread finished after a Reassemble — ignore
+                    st.rerun()
                 else:
-                    st.session_state["assembly_error"] = (
-                        "Assembly finished but produced no output."
-                    )
-                st.rerun()
+                    result_state, error = _ctx.read_result()
+                    if error:
+                        st.session_state["assembly_error"] = error
+                    elif result_state:
+                        # Copy results back into session state, skipping
+                        # assembly tracking keys to avoid overwriting resets
+                        _assembly_tracking_keys = {
+                            "assembly_running", "assembly_done", "assembly_error",
+                            "assembly_started_at", "assembly_gen_id",
+                        }
+                        for k, v in result_state.items():
+                            if k in DEFAULT_STATE and k not in _assembly_tracking_keys:
+                                st.session_state[k] = v
+                    else:
+                        st.session_state["assembly_error"] = (
+                            "Assembly finished but produced no output."
+                        )
+                    st.rerun()
             elif started and (time.time() - started) > ASSEMBLY_TIMEOUT_S:
                 st.session_state["assembly_running"] = False
                 st.session_state["assembly_error"] = (
                     "Video assembly timed out after 15 minutes. "
                     "This may indicate a problem with the inputs."
                 )
+                # Cancel the old thread and bump gen_id
+                if _ctx:
+                    _ctx.cancel_event.set()
                 st.session_state["assembly_gen_id"] = (
                     st.session_state.get("assembly_gen_id", 0) + 1
                 )
@@ -856,6 +865,12 @@ else:
 
                         # Import the assembly module eagerly (on the main thread)
                         from pipeline.assemble import run as assemble_run
+                        from utils.assembly_context import AssemblyContext
+
+                        # Cancel any previous assembly thread
+                        _old_ctx = st.session_state.get("_assembly_ctx")
+                        if _old_ctx:
+                            _old_ctx.cancel_event.set()
 
                         gen_id = st.session_state.get("assembly_gen_id", 0) + 1
                         st.session_state["assembly_gen_id"] = gen_id
@@ -868,6 +883,11 @@ else:
                             f"Overlay files:\n" + "\n".join(_overlay_info),
                         ]
 
+                        # Create thread-safe coordination context
+                        _ctx = AssemblyContext(gen_id=gen_id)
+                        for _line in st.session_state["assembly_debug_log"]:
+                            _ctx.log(_line)
+
                         # Only copy DEFAULT_STATE keys — skip widget objects
                         # (UploadedFile, etc.) that can't be used in a thread
                         state_snapshot = {
@@ -876,42 +896,31 @@ else:
                             if k in st.session_state
                         }
 
-                        # Shared result dict — thread writes here, main thread reads
-                        _debug_log = list(st.session_state["assembly_debug_log"])
-                        _result = {"done": False, "error": None, "state": None, "log": _debug_log}
-
-                        def _log(msg, _log_list=_debug_log):
-                            import datetime as _dt
-                            ts = _dt.datetime.now().strftime("%H:%M:%S")
-                            _log_list.append(f"[{ts}] {msg}")
-
                         def _assemble_in_background(
                             _snapshot=state_snapshot,
-                            _res=_result,
+                            _context=_ctx,
                             _run=assemble_run,
-                            _log_fn=_log,
                         ):
                             import traceback as _tb
                             try:
-                                _log_fn("Starting assembly run...")
-                                _log_fn(f"Background: {_snapshot.get('background_video_path')}")
-                                _log_fn(f"Overlays: {len(_snapshot.get('overlay_sequence', []))} image(s)")
-                                _log_fn(f"Script length: {len((_snapshot.get('script') or '').split())} words")
-                                _log_fn(f"Title: {'enabled' if _snapshot.get('title_enabled') else 'disabled'} — '{_snapshot.get('title_text', '')}'")
+                                _context.log("Starting assembly run...")
+                                _context.log(f"Background: {_snapshot.get('background_video_path')}")
+                                _context.log(f"Overlays: {len(_snapshot.get('overlay_sequence', []))} image(s)")
+                                _context.log(f"Script length: {len((_snapshot.get('script') or '').split())} words")
+                                _context.log(f"Title: {'enabled' if _snapshot.get('title_enabled') else 'disabled'} — '{_snapshot.get('title_text', '')}'")
+                                _context.log(f"Run ID: {_context.run_id} | Gen ID: {_context.gen_id}")
 
-                                updated = _run(_snapshot)
-                                _log_fn(f"Done. final_video_path={updated.get('final_video_path')}")
-                                _res["state"] = updated
+                                updated = _run(_snapshot, ctx=_context)
+                                _context.log(f"Done. final_video_path={updated.get('final_video_path')}")
+                                _context.complete(updated)
                             except Exception as e:
                                 full_tb = _tb.format_exc()
-                                _log_fn(f"ERROR: {e}")
-                                _log_fn(f"TRACEBACK:\n{full_tb}")
-                                _res["error"] = f"{e}\n\nTraceback:\n{full_tb}"
-                            finally:
-                                _res["done"] = True
+                                _context.log(f"ERROR: {e}")
+                                _context.log(f"TRACEBACK:\n{full_tb}")
+                                _context.fail(f"{e}\n\nTraceback:\n{full_tb}")
 
                         thread = threading.Thread(target=_assemble_in_background, daemon=True)
-                        st.session_state["_assembly_result"] = _result
+                        st.session_state["_assembly_ctx"] = _ctx
                         thread.start()
                         st.rerun()
 
@@ -1022,6 +1031,11 @@ else:
                 )
             with col_reassemble:
                 def _reassemble_step6():
+                    # Signal the old thread to stop (if still running)
+                    _old_ctx = st.session_state.get("_assembly_ctx")
+                    if _old_ctx:
+                        _old_ctx.cancel_event.set()
+
                     st.session_state["step6_approved"] = False
                     st.session_state["final_video_path"] = None
                     st.session_state["assembly_diagnostics"] = None
@@ -1029,6 +1043,10 @@ else:
                     st.session_state["assembly_done"] = False
                     st.session_state["assembly_error"] = None
                     st.session_state["assembly_started_at"] = None
+                    # Bump gen_id so any late-finishing thread is discarded
+                    st.session_state["assembly_gen_id"] = (
+                        st.session_state.get("assembly_gen_id", 0) + 1
+                    )
 
                 st.button(
                     "↻ Reassemble",
