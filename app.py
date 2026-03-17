@@ -564,6 +564,11 @@ else:
                     st.warning(f"No image for slot {i + 1}.")
 
                 # --- Swap options ---
+                # Check if a reset was requested on the previous run
+                if st.session_state.get(f"_reset_swap_{i}"):
+                    st.session_state.pop(f"_reset_swap_{i}", None)
+                    st.session_state.pop(f"swap_choice_{i}", None)
+
                 swap_choice = st.selectbox(
                     f"Swap #{i + 1}",
                     options=["—", "Search web", "Generate DALL-E", "Upload"],
@@ -588,7 +593,7 @@ else:
                                     if new_path:
                                         st.session_state["overlay_sequence"][i] = new_path
                                         st.session_state["overlay_sources"][i] = "pexels"
-                                        st.session_state[f"swap_choice_{i}"] = "—"
+                                        st.session_state[f"_reset_swap_{i}"] = True
                                         st.rerun()
                                     else:
                                         st.error("No results. Try a different query.")
@@ -606,7 +611,7 @@ else:
                                     if new_path:
                                         st.session_state["overlay_sequence"][i] = new_path
                                         st.session_state["overlay_sources"][i] = "dalle"
-                                        st.session_state[f"swap_choice_{i}"] = "—"
+                                        st.session_state[f"_reset_swap_{i}"] = True
                                         st.rerun()
                                     else:
                                         st.error("DALL-E generation failed.")
@@ -632,9 +637,8 @@ else:
                         processed = process_overlay(save_path)
                         st.session_state["overlay_sequence"][i] = processed
                         st.session_state["overlay_sources"][i] = "upload"
-                        # Reset swap UI to avoid widget conflicts on future reruns
-                        del st.session_state[f"upload_replace_{i}"]
-                        st.session_state[f"swap_choice_{i}"] = "—"
+                        # Flag reset for next rerun (before widget instantiation)
+                        st.session_state[f"_reset_swap_{i}"] = True
                         st.rerun()
 
         if st.session_state.get("step5_demo"):
