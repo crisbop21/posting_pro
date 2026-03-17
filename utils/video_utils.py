@@ -800,6 +800,183 @@ def build_title_clip(
     return clip
 
 
+# ---------------------------------------------------------------------------
+# Section subtitle rendering (PIL-based → ImageClip)
+# ---------------------------------------------------------------------------
+
+SUBTITLE_FONT_SIZE = 64
+SUBTITLE_MAX_WIDTH = 860  # slightly narrower than title for visual hierarchy
+SUBTITLE_PADDING_X = 44
+SUBTITLE_PADDING_Y = 28
+SUBTITLE_BG_ALPHA = 140  # slightly more transparent than title pill
+
+
+def render_subtitle_image(
+    text: str,
+    font_color: str = "#FFFFFF",
+    bg_color: tuple = (10, 10, 20),
+    output_path: str | None = None,
+) -> str:
+    """Render a section subtitle as a transparent PNG with a pill background.
+
+    Similar to the title renderer but with smaller font and lighter pill
+    to create a visual hierarchy: title > section subtitle > accent text.
+
+    Args:
+        text: The subtitle string to render.
+        font_color: Hex colour for the subtitle text.
+        bg_color: RGB tuple for the pill background.
+        output_path: Where to save the PNG.  Auto-generated if None.
+
+    Returns:
+        Path to the rendered PNG image.
+    """
+    font = _load_font(SUBTITLE_FONT_SIZE, bold=True)
+
+    # Measure text bounding box
+    dummy = Image.new("RGBA", (1, 1))
+    draw = ImageDraw.Draw(dummy)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    # Word-wrap if text is too wide
+    if text_w > SUBTITLE_MAX_WIDTH:
+        words = text.split()
+        lines: list[str] = []
+        current_line = ""
+        for word in words:
+            test = f"{current_line} {word}".strip()
+            test_bbox = draw.textbbox((0, 0), test, font=font)
+            if test_bbox[2] - test_bbox[0] <= SUBTITLE_MAX_WIDTH:
+                current_line = test
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        wrapped_text = "\n".join(lines)
+
+        # Re-measure
+        bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+    else:
+        wrapped_text = text
+
+    # Create image with padding (pill shape)
+    img_w = text_w + SUBTITLE_PADDING_X * 2
+    img_h = text_h + SUBTITLE_PADDING_Y * 2
+    img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Draw rounded rectangle background
+    pill_radius = min(24, img_h // 2)
+    draw.rounded_rectangle(
+        [(0, 0), (img_w - 1, img_h - 1)],
+        radius=pill_radius,
+        fill=(*bg_color, SUBTITLE_BG_ALPHA),
+    )
+
+    # Draw text
+    draw.multiline_text(
+        (SUBTITLE_PADDING_X, SUBTITLE_PADDING_Y),
+        wrapped_text,
+        font=font,
+        fill=font_color,
+        align="center",
+    )
+
+    if output_path is None:
+        Path("tmp").mkdir(exist_ok=True)
+        output_path = tempfile.mktemp(suffix="_subtitle.png", dir="tmp")
+
+    img.save(output_path, "PNG")
+    return output_path
+
+
+def build_section_subtitle_clips(
+    subtitles: list[str],
+    overlay_timings: list[dict],
+    total_duration_s: float,
+    title_duration_s: float = TITLE_DEFAULT_DURATION,
+    font_color: str = "#FFFFFF",
+) -> list:
+    """Create timed ImageClip overlays for section subtitles.
+
+    Each subtitle corresponds to one image overlay section. The subtitle
+    appears at the same vertical position as the main title (upper area)
+    and is timed to match the overlay it belongs to.  The first subtitle
+    is delayed until after the main title fades out.
+
+    Args:
+        subtitles: List of subtitle strings, one per overlay section.
+        overlay_timings: List of dicts with ``start_s`` and ``duration_s``
+            for each image overlay.
+        total_duration_s: Master video duration in seconds.
+        title_duration_s: How long the main title stays on screen.
+            First subtitle starts after this.
+        font_color: Hex colour for the subtitle text.
+
+    Returns:
+        List of MoviePy ImageClip objects positioned and timed.
+    """
+    if not subtitles or not overlay_timings:
+        return []
+
+    clips = []
+    safe_zone_h = CANVAS_HEIGHT - CAPTION_ZONE
+    subtitle_y = int(safe_zone_h * 0.18)  # same position as title
+
+    for i, (sub_text, timing) in enumerate(zip(subtitles, overlay_timings)):
+        if not sub_text or not sub_text.strip():
+            continue
+
+        start = timing["start_s"]
+        duration = timing["duration_s"]
+
+        # For the first overlay, delay subtitle until after the main title fades
+        if i == 0:
+            title_end = title_duration_s + 0.4  # title duration + fade-out
+            if start + duration <= title_end:
+                # Overlay ends before title fades — skip subtitle for this one
+                continue
+            # Shift start to after title fade, shorten duration accordingly
+            start = title_end
+            duration = timing["start_s"] + timing["duration_s"] - start
+
+        # Ensure subtitle doesn't exceed video duration
+        if start + duration > total_duration_s:
+            duration = max(0, total_duration_s - start)
+        if duration < 1.0:
+            continue
+
+        img_path = render_subtitle_image(
+            text=sub_text.strip(),
+            font_color=font_color,
+        )
+
+        clip = (
+            ImageClip(img_path)
+            .with_start(start)
+            .with_duration(duration)
+            .with_position(("center", subtitle_y))
+            .with_effects([
+                vfx.CrossFadeIn(0.4),
+                vfx.CrossFadeOut(0.3),
+            ])
+        )
+        clips.append(clip)
+
+        logger.info(
+            "Section subtitle '%s' at %.1fs–%.1fs",
+            sub_text, start, start + duration,
+        )
+
+    return clips
+
+
 PROGRESS_BAR_HEIGHT = 6  # pixels
 PROGRESS_BAR_Y = 48  # below phone status bar / dynamic island
 
@@ -842,6 +1019,7 @@ def composite_video(background_path: str, audio_path: str,
                     darken: bool = True,
                     accent_text_clips: list | None = None,
                     title_clip: ImageClip | None = None,
+                    section_subtitle_clips: list | None = None,
                     progress_bar_color: tuple[int, int, int] | None = None) -> str:
     """Composite overlays and audio onto the background video using MoviePy.
 
@@ -861,6 +1039,9 @@ def composite_video(background_path: str, audio_path: str,
         accent_text_clips: Optional list of pre-built MoviePy ImageClip
             objects for accent text overlays.  These are layered on top
             of everything else (highest z-order).
+        section_subtitle_clips: Optional list of pre-built MoviePy ImageClip
+            objects for section subtitles.  Layered between the title and
+            accent text overlays.
 
     Returns:
         Tuple of (output_path, diagnostics_dict).
@@ -1032,11 +1213,18 @@ def composite_video(background_path: str, audio_path: str,
             )
 
     # ------------------------------------------------------------------
-    # Add title overlay (above accent text)
+    # Add title overlay
     # ------------------------------------------------------------------
     if title_clip is not None:
         print("[COMPOSITE] Adding title clip")
         clips.append(title_clip)
+
+    # ------------------------------------------------------------------
+    # Add section subtitle clips (between title and accent text)
+    # ------------------------------------------------------------------
+    if section_subtitle_clips:
+        print(f"[COMPOSITE] Adding {len(section_subtitle_clips)} section subtitle clips")
+        clips.extend(section_subtitle_clips)
 
     # ------------------------------------------------------------------
     # Add accent text overlays (highest z-order — on top of everything)
@@ -1109,12 +1297,13 @@ def composite_video(background_path: str, audio_path: str,
         _tmp_dir = Path("tmp")
         if _tmp_dir.exists():
             _cleaned = 0
-            for png in _tmp_dir.glob("tmp*_title.png"):
-                try:
-                    png.unlink()
-                    _cleaned += 1
-                except OSError:
-                    pass
+            for pattern in ("tmp*_title.png", "tmp*_subtitle.png"):
+                for png in _tmp_dir.glob(pattern):
+                    try:
+                        png.unlink()
+                        _cleaned += 1
+                    except OSError:
+                        pass
             for png in _tmp_dir.glob("tmp*.png"):
                 # Only remove files that look like tempfile-generated accent PNGs
                 # (tempfile.mktemp produces names like tmpXXXXXXXX.png)
@@ -1148,6 +1337,7 @@ def composite_video(background_path: str, audio_path: str,
         "overlay_timings": overlay_details,
         "darken": darken,
         "title_overlay": title_clip is not None,
+        "section_subtitles": len(section_subtitle_clips) if section_subtitle_clips else 0,
         "warnings": warnings,
         "success": True,
     }
