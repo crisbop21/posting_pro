@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from elevenlabs import VoiceSettings
+
 from utils.api_clients import elevenlabs_client, ELEVENLABS_VOICE_ID, claude
 from utils.assembly_context import AssemblyContext, CancelledError
 from utils.styles import VISUAL_STYLES
@@ -54,6 +56,12 @@ def _generate_voiceover(script: str, audio_path: str | None = None) -> str:
             voice_id=ELEVENLABS_VOICE_ID,
             text=clean_script,
             model_id="eleven_multilingual_v2",
+            voice_settings=VoiceSettings(
+                stability=0.30,          # low = expressive, varied intonation
+                similarity_boost=0.75,   # keep voice identity but allow range
+                style=0.45,              # dramatic, punchy delivery
+                use_speaker_boost=True,  # louder, clearer presence
+            ),
         )
         with open(audio_path, "wb") as f:
             for chunk in audio:
@@ -79,6 +87,44 @@ def _generate_voiceover(script: str, audio_path: str | None = None) -> str:
             time.sleep(2 ** attempt)
 
     return audio_path
+
+
+def _master_audio(input_path: str) -> str:
+    """Apply broadcast-quality audio mastering: normalize, compress, EQ.
+
+    Chain:
+    1. loudnorm  — target -14 LUFS (TikTok/Reels standard)
+    2. acompressor — even out dynamic range so every word hits
+    3. equalizer — subtle 200 Hz bass boost for phone speaker warmth
+
+    Returns path to the mastered file (replaces the input in-place).
+    """
+    import subprocess
+
+    mastered_path = input_path.replace(".mp3", "_mastered.mp3")
+    filters = (
+        "loudnorm=I=-14:TP=-1:LRA=11,"
+        "acompressor=threshold=-20dB:ratio=4:attack=5:release=50,"
+        "equalizer=f=200:t=q:w=1.5:g=3"
+    )
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", input_path,
+             "-af", filters,
+             "-ar", "44100", "-ab", "192k",
+             mastered_path],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode == 0 and Path(mastered_path).exists():
+            # Replace original with mastered version
+            Path(mastered_path).replace(input_path)
+            logger.info("Audio mastered successfully: %s", input_path)
+            return input_path
+        logger.warning("Audio mastering failed (rc=%d), using raw audio",
+                       result.returncode)
+    except Exception as e:
+        logger.warning("Audio mastering skipped: %s", e)
+    return input_path
 
 
 def _get_audio_duration(audio_path: str) -> float | None:
@@ -278,6 +324,11 @@ def run(state: dict, ctx: AssemblyContext | None = None) -> dict:
     vo_path = ctx.voiceover_path() if ctx else None
     audio_path = _generate_voiceover(script, audio_path=vo_path)
     _log(f"[ASSEMBLE] Voiceover saved to {audio_path}")
+
+    # Master the audio: normalize loudness, compress dynamics, boost bass
+    _log("[ASSEMBLE] Mastering audio (loudnorm + compression + EQ)...")
+    audio_path = _master_audio(audio_path)
+    _log("[ASSEMBLE] Audio mastering complete")
 
     # Use actual audio duration when available, fall back to estimate
     actual_duration = _get_audio_duration(audio_path)
