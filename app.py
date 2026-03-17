@@ -516,7 +516,11 @@ else:
                     with st.spinner("Searching Pexels for images..."):
                         from pipeline.images import run as images_run
 
-                        state = {k: st.session_state[k] for k in st.session_state}
+                        state = {
+                            k: st.session_state[k]
+                            for k in DEFAULT_STATE
+                            if k in st.session_state
+                        }
                         state = images_run(state)
                         for k, v in state.items():
                             if k in DEFAULT_STATE:
@@ -546,6 +550,22 @@ else:
 
         st.write(f"{len(overlays)} overlay image(s) sourced.")
 
+        # ── Pending swap: process on rerun before rendering widgets ──
+        # This pattern avoids Streamlit widget key conflicts by doing
+        # all state mutations BEFORE any widget with a matching key
+        # is instantiated on this run.
+        _pending = st.session_state.pop("_pending_swap", None)
+        if _pending is not None:
+            _pi = _pending["slot"]
+            _ppath = _pending.get("path")
+            _psrc = _pending.get("source", "pexels")
+            if _ppath and Path(_ppath).exists():
+                st.session_state["overlay_sequence"][_pi] = _ppath
+                st.session_state["overlay_sources"][_pi] = _psrc
+                # Refresh local refs
+                overlays = st.session_state["overlay_sequence"]
+                sources = st.session_state["overlay_sources"]
+
         # Display image grid with per-slot swap controls
         cols = st.columns(min(len(overlays), 3)) if overlays else []
         for i, img_path in enumerate(overlays):
@@ -557,18 +577,13 @@ else:
 
                 if img_path and Path(img_path).exists():
                     try:
-                        st.image(img_path, width="stretch")
+                        st.image(img_path, use_container_width=True)
                     except Exception:
                         st.warning(f"Image for slot {i + 1} is corrupt. Use swap options below to replace it.")
                 else:
                     st.warning(f"No image for slot {i + 1}.")
 
                 # --- Swap options ---
-                # Check if a reset was requested on the previous run
-                if st.session_state.get(f"_reset_swap_{i}"):
-                    st.session_state.pop(f"_reset_swap_{i}", None)
-                    st.session_state.pop(f"swap_choice_{i}", None)
-
                 swap_choice = st.selectbox(
                     f"Swap #{i + 1}",
                     options=["—", "Search web", "Generate DALL-E", "Upload"],
@@ -591,9 +606,9 @@ else:
                                     from pipeline.images import _search_pexels_for_marker
                                     new_path = _search_pexels_for_marker(_custom_q.strip())
                                     if new_path:
-                                        st.session_state["overlay_sequence"][i] = new_path
-                                        st.session_state["overlay_sources"][i] = "pexels"
-                                        st.session_state[f"_reset_swap_{i}"] = True
+                                        st.session_state["_pending_swap"] = {
+                                            "slot": i, "path": new_path, "source": "pexels",
+                                        }
                                         st.rerun()
                                     else:
                                         st.error("No results. Try a different query.")
@@ -605,13 +620,13 @@ else:
                     if st.button("Generate", key=f"btn_dalle_{i}"):
                         if _marker_desc:
                             try:
-                                with st.spinner(f"Generating DALL-E image..."):
+                                with st.spinner("Generating DALL-E image..."):
                                     from pipeline.images import _generate_dalle_image
                                     new_path = _generate_dalle_image(_marker_desc)
                                     if new_path:
-                                        st.session_state["overlay_sequence"][i] = new_path
-                                        st.session_state["overlay_sources"][i] = "dalle"
-                                        st.session_state[f"_reset_swap_{i}"] = True
+                                        st.session_state["_pending_swap"] = {
+                                            "slot": i, "path": new_path, "source": "dalle",
+                                        }
                                         st.rerun()
                                     else:
                                         st.error("DALL-E generation failed.")
@@ -628,18 +643,20 @@ else:
                         label_visibility="collapsed",
                     )
                     if replacement is not None:
-                        from utils.image_utils import process_overlay
+                        try:
+                            from utils.image_utils import process_overlay
 
-                        Path("tmp").mkdir(exist_ok=True)
-                        save_path = f"tmp/replace_overlay_{i}_{replacement.name}"
-                        with open(save_path, "wb") as f:
-                            f.write(replacement.getbuffer())
-                        processed = process_overlay(save_path)
-                        st.session_state["overlay_sequence"][i] = processed
-                        st.session_state["overlay_sources"][i] = "upload"
-                        # Flag reset for next rerun (before widget instantiation)
-                        st.session_state[f"_reset_swap_{i}"] = True
-                        st.rerun()
+                            Path("tmp").mkdir(exist_ok=True)
+                            save_path = f"tmp/replace_overlay_{i}_{replacement.name}"
+                            with open(save_path, "wb") as f:
+                                f.write(replacement.getbuffer())
+                            processed = process_overlay(save_path)
+                            st.session_state["_pending_swap"] = {
+                                "slot": i, "path": processed, "source": "upload",
+                            }
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Could not process uploaded image: {e}")
 
         if st.session_state.get("step5_demo"):
             demo_badge(5)
