@@ -73,10 +73,10 @@ class TestOverlaySequenceAlignment:
     @patch("pipeline.assemble.composite_video")
     @patch("pipeline.assemble.elevenlabs_client")
     @patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
-    def test_beat_map_drops_reduce_sequence_length(
+    def test_beat_map_overflow_redistributes_all(
         self, mock_master, mock_eleven, mock_composite
     ):
-        """Beat map that drops entries → overlay_sequence shorter than overlays."""
+        """Beat map with overflow entry → redistributes so all overlays survive."""
         mock_eleven.text_to_speech.convert.return_value = [b"audio"]
         mock_composite.side_effect = _mock_composite_return
 
@@ -85,7 +85,7 @@ class TestOverlaySequenceAlignment:
         state = mock_state(up_to_step=5)
         state["estimated_duration_s"] = 60
 
-        # 4 overlays, 4 beat map entries — last one overflows
+        # 4 overlays, 4 beat map entries — last one would overflow
         state["beat_map"] = [
             {"start_pct": 0.0, "duration_pct": 0.20, "marker": "a"},
             {"start_pct": 0.25, "duration_pct": 0.20, "marker": "b"},
@@ -97,8 +97,8 @@ class TestOverlaySequenceAlignment:
 
         call_kwargs = mock_composite.call_args
         actual_seq = call_kwargs.kwargs.get("overlay_sequence") or call_kwargs[0][2]
-        # Entry d starts at 57s with 3s remaining → dropped
-        assert len(actual_seq) == 3
+        # All 4 overlays should survive after redistribution
+        assert len(actual_seq) == 4
 
     @patch("pipeline.assemble.composite_video")
     @patch("pipeline.assemble.elevenlabs_client")
@@ -167,10 +167,10 @@ class TestDroppedOverlayLogging:
     @patch("pipeline.assemble.composite_video")
     @patch("pipeline.assemble.elevenlabs_client")
     @patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
-    def test_dropped_overlays_logged_via_context(
+    def test_beat_map_redistribution_logged_via_context(
         self, mock_master, mock_eleven, mock_composite
     ):
-        """AssemblyContext should capture the WARNING log about dropped overlays."""
+        """AssemblyContext should capture beat map timing log after redistribution."""
         from utils.assembly_context import AssemblyContext
 
         mock_eleven.text_to_speech.convert.return_value = [b"audio"]
@@ -182,7 +182,7 @@ class TestDroppedOverlayLogging:
         state = mock_state(up_to_step=5)
         state["estimated_duration_s"] = 60
 
-        # Beat map with overflow entry
+        # Beat map with overflow entry — triggers redistribution
         state["beat_map"] = [
             {"start_pct": 0.0, "duration_pct": 0.20, "marker": "a"},
             {"start_pct": 0.25, "duration_pct": 0.20, "marker": "b"},
@@ -193,4 +193,5 @@ class TestDroppedOverlayLogging:
         run(state, ctx=ctx)
 
         log = ctx.get_log()
-        assert any("dropped" in line.lower() or "WARNING" in line for line in log)
+        # Should log that beat map timing was used (after redistribution)
+        assert any("beat map" in line.lower() or "timing" in line.lower() for line in log)

@@ -208,8 +208,8 @@ class TestAccentTextGapCoverage:
             f"Accent clips cannot fill a {gap_duration}s gap."
         )
 
-    def test_gap_intervals_match_dropped_overlay_scenario(self):
-        """Simulate the exact scenario: beat map drops last overlay → tail gap."""
+    def test_redistribution_eliminates_large_tail_gap(self):
+        """After redistribution, the tail gap should be small or eliminated."""
         from pipeline.assemble import _beat_map_to_timings
 
         beat_map = [
@@ -220,18 +220,16 @@ class TestAccentTextGapCoverage:
         ]
         timings = _beat_map_to_timings(beat_map, total_duration_s=60.0)
 
-        # Entry d is dropped → timings only cover entries a, b, c
-        assert len(timings) == 3
+        # All 4 entries should survive after redistribution
+        assert len(timings) == 4
 
         gaps = _compute_gap_intervals(timings, total_duration_s=60.0)
 
-        # There should be a gap after the last overlay (entry c ends around 42s)
+        # Tail gap should be small (< 2s) — overlays now cover the full duration
         tail_gaps = [g for g in gaps if g[1] == 60.0]
-        assert len(tail_gaps) == 1
-
-        tail_gap_duration = tail_gaps[0][1] - tail_gaps[0][0]
-        # The tail gap should be substantial (>10s)
-        assert tail_gap_duration > 10.0, (
-            f"Tail gap is only {tail_gap_duration:.1f}s — "
-            f"this is the background-only segment users are seeing."
-        )
+        if tail_gaps:
+            tail_gap_duration = tail_gaps[0][1] - tail_gaps[0][0]
+            assert tail_gap_duration < 2.0, (
+                f"Tail gap is {tail_gap_duration:.1f}s — redistribution "
+                f"should have eliminated the large background-only segment."
+            )

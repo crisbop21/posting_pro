@@ -216,9 +216,12 @@ def _beat_map_to_timings(beat_map: list[dict], total_duration_s: float,
     """Convert percentage-based beat map to absolute second timings.
 
     Clamps each overlay duration to the composition skill's 4–18s range.
-    Skips entries that cannot fit the minimum duration before the video ends.
+    If any entries cannot fit before the video ends, redistributes all
+    entries evenly so every overlay gets screen time.
     """
+    # First pass: try normal percentage-based conversion
     timings = []
+    had_drops = False
     for i, entry in enumerate(beat_map):
         start = entry["start_pct"] * total_duration_s
         duration = entry["duration_pct"] * total_duration_s
@@ -227,18 +230,51 @@ def _beat_map_to_timings(beat_map: list[dict], total_duration_s: float,
         if start + duration > total_duration_s:
             remaining = total_duration_s - start
             if remaining < min_s:
-                # Not enough room — skip this entry entirely
                 logger.warning(
-                    "Skipping beat map entry #%d at %.1fs: only %.1fs "
-                    "remaining (min=%.1fs)",
-                    i + 1, start, remaining, min_s,
+                    "Beat map entry #%d at %.1fs cannot fit min %.1fs "
+                    "(%.1fs remaining) — will redistribute",
+                    i + 1, start, min_s, remaining,
                 )
+                had_drops = True
                 continue
             duration = remaining
         timings.append({
             "start_s": round(start, 2),
             "duration_s": round(duration, 2),
         })
+
+    # If any entries were dropped, redistribute evenly so all get time
+    if had_drops:
+        n_total = len(beat_map)
+        gap = 0.2
+        available = total_duration_s - (gap * (n_total - 1))
+        per_overlay = min(max_s, available / n_total)
+        if per_overlay < min_s:
+            logger.warning(
+                "Redistributed duration %.1fs below %.1fs min for %d "
+                "overlays in %.1fs — allowing to avoid bare segments",
+                per_overlay, min_s, n_total, total_duration_s,
+            )
+        if per_overlay <= 0:
+            per_overlay = total_duration_s / n_total
+            gap = 0.0
+
+        timings = []
+        current_time = 0.0
+        for _ in range(n_total):
+            dur = min(per_overlay, total_duration_s - current_time)
+            if dur <= 0:
+                break
+            timings.append({
+                "start_s": round(current_time, 2),
+                "duration_s": round(dur, 2),
+            })
+            current_time += dur + gap
+        logger.info(
+            "Redistributed %d beat map entries into %d timing slots "
+            "(%.1fs each)", n_total, len(timings), per_overlay,
+        )
+
     return timings
 
 
@@ -246,7 +282,9 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
     """Compute evenly spaced start times and durations for overlays.
 
     Each overlay gets an equal share of the video duration, clamped to
-    the 4–18 second range defined in the composition skill.
+    a maximum of 18 seconds.  Prefers durations >= 4s but allows shorter
+    durations as a last resort to ensure every overlay gets screen time
+    and avoid bare background segments.
     The first overlay always starts at t=0 for an instant visual hook.
     """
     if overlay_count == 0:
@@ -254,19 +292,35 @@ def _compute_overlay_timing(overlay_count: int, total_duration_s: float) -> list
 
     gap = 0.2  # seconds between overlays — tighter pacing for dopamine
     available = total_duration_s - (gap * (overlay_count - 1))
-    per_overlay = max(4.0, min(18.0, available / overlay_count))
+    per_overlay = min(18.0, available / overlay_count)
+
+    if per_overlay < 4.0:
+        logger.warning(
+            "Overlay duration %.1fs below 4s minimum for %d overlays "
+            "in %.1fs video — allowing to avoid bare segments",
+            per_overlay, overlay_count, total_duration_s,
+        )
+
+    # Absolute floor: must have positive duration
+    if per_overlay <= 0:
+        per_overlay = total_duration_s / overlay_count
+        gap = 0.0
+        if per_overlay <= 0:
+            return []
 
     timings = []
     current_time = 0.0  # first overlay starts immediately (hook frame)
 
     for _ in range(overlay_count):
-        if current_time + per_overlay > total_duration_s:
+        remaining = total_duration_s - current_time
+        dur = min(per_overlay, remaining)
+        if dur <= 0:
             break
         timings.append({
             "start_s": round(current_time, 2),
-            "duration_s": round(per_overlay, 2),
+            "duration_s": round(dur, 2),
         })
-        current_time += per_overlay + gap
+        current_time += dur + gap
 
     return timings
 
@@ -345,7 +399,12 @@ def run(state: dict, ctx: AssemblyContext | None = None) -> dict:
     beat_map = state.get("beat_map")
     if beat_map and len(beat_map) == len(overlays):
         timings = _beat_map_to_timings(beat_map, duration)
-        _log(f"[ASSEMBLE] Using beat map timing: {len(timings)} entries")
+        if len(timings) < len(overlays):
+            _log(f"[ASSEMBLE] Beat map produced {len(timings)} timings for "
+                 f"{len(overlays)} overlays — falling back to even distribution")
+            timings = _compute_overlay_timing(len(overlays), duration)
+        else:
+            _log(f"[ASSEMBLE] Using beat map timing: {len(timings)} entries")
     else:
         timings = _compute_overlay_timing(len(overlays), duration)
         if beat_map:

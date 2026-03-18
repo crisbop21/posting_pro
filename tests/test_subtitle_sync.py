@@ -43,10 +43,10 @@ class TestSubtitleZipTruncation:
 
     @patch("utils.video_utils.render_subtitle_image")
     @patch("utils.video_utils.ImageClip")
-    def test_more_subtitles_than_timings_truncates(
+    def test_more_subtitles_than_timings_pads_timings(
         self, mock_imageclip, mock_render
     ):
-        """5 subtitles + 4 timings → only 4 subtitle clips produced."""
+        """5 subtitles + 4 timings → extra timing created for 5th subtitle."""
         mock_render.return_value = "/tmp/fake_sub.png"
         mock_clip = MagicMock()
         mock_clip.with_start.return_value = mock_clip
@@ -72,15 +72,15 @@ class TestSubtitleZipTruncation:
             title_duration_s=2.5,
         )
 
-        # zip truncates: only 4 subtitles are processed
-        # First might be skipped if it ends before title fade
-        assert len(clips) <= 4
-        # "Sub 5" is never rendered
+        # Extra timing padded for Sub 5 using remaining time (48.6→60.0)
+        # All 5 subtitles should be processed (first may be skipped due to title)
+        assert len(clips) >= 4
+        # "Sub 5" should now be rendered
         rendered_texts = [
             call.args[0] if call.args else call.kwargs.get("text", "")
             for call in mock_render.call_args_list
         ]
-        assert "Sub 5" not in rendered_texts
+        assert "Sub 5" in rendered_texts
 
     @patch("utils.video_utils.render_subtitle_image")
     @patch("utils.video_utils.ImageClip")
@@ -297,11 +297,10 @@ class TestSubtitleRegenerationAfterDrop:
     @patch("pipeline.assemble.elevenlabs_client")
     @patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
     @patch("pipeline.assemble._generate_section_subtitles")
-    def test_subtitles_regenerated_to_match_reduced_overlay_count(
+    def test_subtitles_generated_for_all_overlays_after_redistribution(
         self, mock_gen_subs, mock_master, mock_eleven, mock_composite
     ):
-        """When beat map drops an overlay, subtitles should be regenerated
-        to match the reduced overlay count (not the original count)."""
+        """After redistribution, subtitles should be generated for all overlays."""
         from tests.helpers import mock_state
         from pipeline.assemble import run
 
@@ -310,12 +309,12 @@ class TestSubtitleRegenerationAfterDrop:
             kwargs["output_path"],
             {"engine": "mock", "success": True, "warnings": []},
         )
-        mock_gen_subs.return_value = ["Sub A", "Sub B", "Sub C"]
+        mock_gen_subs.return_value = ["Sub A", "Sub B", "Sub C", "Sub D"]
 
         state = mock_state(up_to_step=5)
         state["estimated_duration_s"] = 60
 
-        # Beat map drops last entry → 3 overlays survive
+        # Beat map with overflow entry → triggers redistribution, all 4 survive
         state["beat_map"] = [
             {"start_pct": 0.0, "duration_pct": 0.20, "marker": "a"},
             {"start_pct": 0.25, "duration_pct": 0.20, "marker": "b"},
@@ -327,19 +326,19 @@ class TestSubtitleRegenerationAfterDrop:
 
         run(state)
 
-        # Subtitles should be generated for the surviving overlay count (3)
+        # Subtitles should be generated for all 4 overlays
         if mock_gen_subs.called:
             call_args = mock_gen_subs.call_args
             requested_count = call_args[0][1] if len(call_args[0]) > 1 else call_args.kwargs.get("overlay_count")
-            assert requested_count == 3
+            assert requested_count == 4
 
     @patch("pipeline.assemble.composite_video")
     @patch("pipeline.assemble.elevenlabs_client")
     @patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
-    def test_stale_cached_subtitles_cause_zip_mismatch(
+    def test_cached_subtitles_all_used_after_redistribution(
         self, mock_master, mock_eleven, mock_composite
     ):
-        """Pre-cached subtitles with wrong count → zip truncation in build_section_subtitle_clips."""
+        """Pre-cached subtitles should all be used when redistribution keeps all overlays."""
         from tests.helpers import mock_state
         from pipeline.assemble import run
 
@@ -352,10 +351,10 @@ class TestSubtitleRegenerationAfterDrop:
         state = mock_state(up_to_step=5)
         state["estimated_duration_s"] = 60
 
-        # Pre-cache 4 subtitles (matching original 4 overlays)
+        # Pre-cache 4 subtitles (matching 4 overlays)
         state["section_subtitles"] = ["S1", "S2", "S3", "S4"]
 
-        # Beat map drops last entry → only 3 overlay timing slots
+        # Beat map with overflow → redistributes, all 4 survive
         state["beat_map"] = [
             {"start_pct": 0.0, "duration_pct": 0.20, "marker": "a"},
             {"start_pct": 0.25, "duration_pct": 0.20, "marker": "b"},
@@ -363,12 +362,9 @@ class TestSubtitleRegenerationAfterDrop:
             {"start_pct": 0.95, "duration_pct": 0.10, "marker": "d"},
         ]
 
-        # This should run without error — zip just silently truncates
         run(state)
 
-        # The 4th subtitle "S4" is never shown (zip truncation)
-        # This test documents the current (buggy) behavior
         call_kwargs = mock_composite.call_args
         section_clips = call_kwargs.kwargs.get("section_subtitle_clips", [])
-        # At most 3 subtitle clips (one per surviving overlay)
-        assert len(section_clips) <= 3
+        # All 4 subtitles should produce clips (first may be delayed for title)
+        assert len(section_clips) >= 3

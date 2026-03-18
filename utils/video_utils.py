@@ -925,6 +925,34 @@ def build_section_subtitle_clips(
     if not subtitles or not overlay_timings:
         return []
 
+    # Handle length mismatches explicitly instead of silent zip truncation
+    if len(subtitles) != len(overlay_timings):
+        logger.warning(
+            "Subtitle/timing count mismatch: %d subtitles vs %d timings — "
+            "processing %d pairs",
+            len(subtitles), len(overlay_timings),
+            min(len(subtitles), len(overlay_timings)),
+        )
+        # Pad overlay_timings if fewer than subtitles using remaining time
+        if len(overlay_timings) < len(subtitles):
+            last_end = (overlay_timings[-1]["start_s"]
+                        + overlay_timings[-1]["duration_s"])
+            remaining = total_duration_s - last_end
+            extras_needed = len(subtitles) - len(overlay_timings)
+            if remaining > 0 and extras_needed > 0:
+                extra_gap = 0.2
+                extra_dur = (remaining - extra_gap * extras_needed) / extras_needed
+                current = last_end + extra_gap
+                for _ in range(extras_needed):
+                    dur = min(extra_dur, total_duration_s - current)
+                    if dur < 1.0:
+                        break
+                    overlay_timings = [*overlay_timings, {
+                        "start_s": round(current, 2),
+                        "duration_s": round(dur, 2),
+                    }]
+                    current += dur + extra_gap
+
     clips = []
     safe_zone_h = CANVAS_HEIGHT - CAPTION_ZONE
     subtitle_y = int(safe_zone_h * 0.18)  # same position as title

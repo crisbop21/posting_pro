@@ -123,8 +123,8 @@ class TestTimelineCoverage:
                 f"exceeds 5s threshold"
             )
 
-    def test_bare_segments_with_beat_map_overflow(self):
-        """Beat map that drops the last overlay creates a large bare tail."""
+    def test_no_large_bare_segments_after_redistribution(self):
+        """Beat map overflow triggers redistribution — no large bare tail."""
         from pipeline.assemble import _beat_map_to_timings
 
         beat_map = [
@@ -135,10 +135,9 @@ class TestTimelineCoverage:
         ]
         timings = _beat_map_to_timings(beat_map, total_duration_s=60.0)
 
-        # Only 3 timings survive → 4th overlay dropped
-        assert len(timings) == 3
+        # All 4 timings survive after redistribution
+        assert len(timings) == 4
 
-        # Sparse accent clips cannot cover the tail gap
         accent_count = 4
         accent_dur = 1.8
         accent_gap = max(0.5, (60.0 - accent_dur * accent_count) / accent_count)
@@ -151,11 +150,11 @@ class TestTimelineCoverage:
             accent_gap=accent_gap,
         )
 
-        # There SHOULD be a bare segment > 5s near the end
+        # No bare segment should exceed 5s after redistribution
         max_bare = max((end - start for start, end in bare), default=0)
-        assert max_bare > 5.0, (
-            f"Expected a bare segment > 5s due to dropped overlay, "
-            f"but max was {max_bare:.1f}s. This test documents the bug."
+        assert max_bare < 5.0, (
+            f"Bare segment of {max_bare:.1f}s found — redistribution "
+            f"should have eliminated large background-only segments."
         )
 
 
@@ -203,10 +202,10 @@ class TestAssemblyIntegration:
     @patch("pipeline.assemble.composite_video")
     @patch("pipeline.assemble.elevenlabs_client")
     @patch("pipeline.assemble._master_audio", side_effect=lambda p: p)
-    def test_assembly_with_beat_map_overflow_documents_gap(
+    def test_assembly_with_beat_map_overflow_preserves_all(
         self, mock_master, mock_eleven, mock_composite
     ):
-        """Assembly with overflowing beat map → documents the visual gap."""
+        """Assembly with overflowing beat map → redistribution preserves all overlays."""
         mock_eleven.text_to_speech.convert.return_value = [b"audio"]
 
         captured = {}
@@ -231,10 +230,10 @@ class TestAssemblyIntegration:
 
         run(state)
 
-        # Only 3 overlays survive — the 4th is dropped
-        assert len(captured["overlay_sequence"]) == 3
+        # All 4 overlays survive after redistribution
+        assert len(captured["overlay_sequence"]) == 4
 
-        # Verify the surviving overlays are from the first 3 images
+        # Verify all overlay paths are preserved in order
         for i, ov in enumerate(captured["overlay_sequence"]):
             assert ov["image_path"] == state["overlay_sequence"][i]
 
