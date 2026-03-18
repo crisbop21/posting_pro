@@ -79,8 +79,8 @@ def test_overlay_timing_single_overlay():
 
 # ── Beat map boundary overflow (P1-5) ────────────────────────────
 
-def test_beat_map_skips_entries_past_video_end():
-    """Beat map entries that can't fit min_s before video end are skipped."""
+def test_beat_map_redistributes_entries_past_video_end():
+    """Beat map entries that can't fit trigger redistribution for all entries."""
     from pipeline.assemble import _beat_map_to_timings
 
     beat_map = [
@@ -89,9 +89,10 @@ def test_beat_map_skips_entries_past_video_end():
     ]
     timings = _beat_map_to_timings(beat_map, total_duration_s=10.0)
 
-    # Second entry starts at 9.5s with only 0.5s remaining < 4.0s min
-    assert len(timings) == 1
-    assert timings[0]["start_s"] + timings[0]["duration_s"] <= 10.0
+    # Both entries should get timing slots after redistribution
+    assert len(timings) == 2
+    for t in timings:
+        assert t["start_s"] + t["duration_s"] <= 10.0
 
 
 def test_beat_map_clamps_duration_without_overflow():
